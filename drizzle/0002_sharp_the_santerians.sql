@@ -1,0 +1,1 @@
+DROP INDEX `workspaces_owner_idx`;
