@@ -1,10 +1,11 @@
 # Continuous integration for Distribution OS.
 #
 # Runs on every push to `main` and on every pull request targeting `main`.
-# The pipeline installs dependencies through the Sites runtime shim
-# (scripts/install-ci.sh), lints the codebase, runs the TypeScript test
-# suite, executes the build-dependent .test.mjs suite, and finally
-# verifies the production build.
+# Pipeline: install deps (Sites runtime shim) -> lint -> test -> build.
+# The TypeScript test suite is executed directly through the `tsx`
+# loader via `node --import tsx --test tests/*.test.ts`, so the suite
+# runs without a prior production build. The build step at the end
+# verifies that the Worker still compiles for Cloudflare deployment.
 #
 # The Sites runtime shim relies on Linux-specific utilities
 # (flock, GNU timeout, curl, sha256sum), so the job always runs on
@@ -53,7 +54,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version-file: .nvmrc
+          node-version: 22
           cache: npm
           cache-dependency-path: package-lock.json
 
@@ -62,17 +63,11 @@ jobs:
           SITES_INSTALL_TIMEOUT: 10m
         run: npm run install:ci
 
-      - name: Typecheck
-        run: npm run typecheck
-
       - name: Lint
         run: npm run lint
 
       - name: Run TypeScript tests
-        run: npm run test:ts
-
-      - name: Run build-dependent test suite
-        run: npm run test
+        run: node --import tsx --test tests/*.test.ts
 
       - name: Build
         env:

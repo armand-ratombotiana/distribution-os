@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowRight,
   CircleAlert,
@@ -13,6 +13,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ChartCard, type ChartDatum } from "./chart-card";
 
 type PaymentRow = {
   id: string;
@@ -132,6 +133,55 @@ export function RevenuePanel({ missionId }: { missionId: string }) {
       )
     : payments;
 
+  const paymentChartData: ChartDatum[] = useMemo(() => {
+    const byStatus: Record<string, number> = {
+      pending: 0,
+      succeeded: 0,
+      refunded: 0,
+      disputed: 0,
+      failed: 0,
+    };
+    for (const payment of payments) {
+      byStatus[payment.status] = (byStatus[payment.status] ?? 0) + 1;
+    }
+    const order: Array<keyof typeof byStatus> = [
+      "succeeded",
+      "pending",
+      "refunded",
+      "disputed",
+      "failed",
+    ];
+    return order
+      .map((status) => ({
+        label: status.charAt(0).toUpperCase() + status.slice(1),
+        value: byStatus[status] ?? 0,
+        hint: `${formatCurrency(
+          payments
+            .filter((p) => p.status === status)
+            .reduce((sum, p) => sum + p.amount_cents, 0),
+          "usd",
+        )}`,
+      }))
+      .filter((datum) => datum.value > 0);
+  }, [payments]);
+
+  const channelChartData: ChartDatum[] = useMemo(() => {
+    const byChannel = new Map<string, number>();
+    for (const touchpoint of touchpoints) {
+      byChannel.set(
+        touchpoint.channel,
+        (byChannel.get(touchpoint.channel) ?? 0) + 1,
+      );
+    }
+    return Array.from(byChannel.entries())
+      .map(([channel, count]) => ({
+        label: channel,
+        value: count,
+      }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 6);
+  }, [touchpoints]);
+
   return (
     <section className="ws-panel workspace-revenue-panel">
       <header className="ws-panel-head">
@@ -183,6 +233,37 @@ export function RevenuePanel({ missionId }: { missionId: string }) {
           );
         })}
       </section>
+
+      {!loading && payments.length > 0 ? (
+        <div className="revenue-charts">
+          <ChartCard
+            title="Payments by status"
+            eyebrow="Revenue breakdown"
+            data={paymentChartData}
+            type="bar"
+            footer={
+              <small>
+                {succeeded.length} succeeded ·{" "}
+                {payments.length - succeeded.length} other
+              </small>
+            }
+            testId="revenue-chart-payments"
+          />
+          <ChartCard
+            title="Touchpoints by channel"
+            eyebrow="Distribution activity"
+            data={channelChartData}
+            type="bar"
+            footer={
+              <small>
+                {touchpoints.length} touchpoints across{" "}
+                {channelChartData.length} channels
+              </small>
+            }
+            testId="revenue-chart-channels"
+          />
+        </div>
+      ) : null}
 
       <div className="ws-form-row">
         <Input

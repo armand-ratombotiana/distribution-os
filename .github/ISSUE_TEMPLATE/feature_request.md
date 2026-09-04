@@ -71,7 +71,7 @@ assignees: []
 
 ## Workload estimate
 
-<!-- Rough t-shirt size: S (< 1 day), M (1–3 days), L (> 3 days). -->
+<!-- Rough t-shirt size: S (< 1 day), M (1-3 days), L (> 3 days). -->
 
 ## Acceptance criteria
 

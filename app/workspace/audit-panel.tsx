@@ -3,14 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   CircleAlert,
-  Filter,
   LoaderCircle,
   RefreshCw,
   ShieldAlert,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { SearchInput } from "./search-input";
 
 type AuditCategory =
   | "auth"
@@ -158,15 +157,15 @@ export function AuditPanel({ workspaceId }: { workspaceId: string }) {
       </header>
 
       <div className="connector-toolbar">
-        <div>
-          <Filter />
-          <Input
-            aria-label="Filter audit events"
-            placeholder="Filter by event type or resource"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </div>
+        <SearchInput
+          value={query}
+          onChange={setQuery}
+          placeholder="Filter by event type or resource"
+          ariaLabel="Filter audit events"
+          debounceMs={200}
+          testId="audit-search-input"
+          className="audit-search-input"
+        />
         <span>{filtered.length} events</span>
       </div>
 

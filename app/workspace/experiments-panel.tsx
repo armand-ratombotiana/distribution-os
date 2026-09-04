@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CircleAlert,
   FlaskConical,
@@ -12,6 +12,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ChartCard, type ChartDatum } from "./chart-card";
 import { EmptyState } from "./empty-state";
 
 type ExperimentStatus =
@@ -144,6 +145,44 @@ export function ExperimentsPanel({ missionId }: { missionId: string }) {
     }
   }
 
+  const statusChartData: ChartDatum[] = useMemo(() => {
+    const byStatus: Record<ExperimentStatus, number> = {
+      draft: 0,
+      running: 0,
+      completed: 0,
+      stopped: 0,
+      blocked: 0,
+    };
+    for (const item of items) {
+      byStatus[item.status] += 1;
+    }
+    return (Object.keys(byStatus) as ExperimentStatus[])
+      .map((status) => ({
+        label: statusLabel[status],
+        value: byStatus[status],
+      }))
+      .filter((datum) => datum.value > 0);
+  }, [items]);
+
+  const decisionChartData: ChartDatum[] = useMemo(() => {
+    const byDecision: Record<ExperimentDecision, number> = {
+      continue: 0,
+      change: 0,
+      stop: 0,
+      blocked: 0,
+      pending: 0,
+    };
+    for (const item of items) {
+      byDecision[item.decision] += 1;
+    }
+    return (Object.keys(byDecision) as ExperimentDecision[])
+      .map((decision) => ({
+        label: decisionLabel[decision],
+        value: byDecision[decision],
+      }))
+      .filter((datum) => datum.value > 0);
+  }, [items]);
+
   return (
     <section className="ws-panel workspace-experiments-panel">
       <header className="ws-panel-head">
@@ -198,6 +237,32 @@ export function ExperimentsPanel({ missionId }: { missionId: string }) {
           </Button>
         </div>
       </form>
+
+      {!loading && items.length > 0 ? (
+        <div className="experiments-charts">
+          <ChartCard
+            title="Experiments by status"
+            eyebrow="Pipeline"
+            data={statusChartData}
+            type="bar"
+            footer={<small>{items.length} experiment(s) tracked</small>}
+            testId="experiments-chart-status"
+          />
+          <ChartCard
+            title="Decisions reached"
+            eyebrow="Outcomes"
+            data={decisionChartData}
+            type="bar"
+            footer={
+              <small>
+                {items.filter((i) => i.decision !== "pending").length} decided ·{" "}
+                {items.filter((i) => i.decision === "pending").length} pending
+              </small>
+            }
+            testId="experiments-chart-decisions"
+          />
+        </div>
+      ) : null}
 
       {error && (
         <div className="ws-error">

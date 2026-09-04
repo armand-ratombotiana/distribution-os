@@ -52,7 +52,7 @@ Content-Type: application/json
 
 ```json
 {
-  "error": { "type": "internal", "message": "…" }
+  "error": { "type": "internal", "message": "..." }
 }
 ```
 

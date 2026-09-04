@@ -1,8 +1,8 @@
 # Production deployment for Distribution OS.
 #
-# Triggers on every push to `main` (after the CI workflow has gone green
-# on the same commit). Deploys the built Worker to Cloudflare plus
-# applies any pending D1 migrations to the production database.
+# Triggers on every push to `main` once CI has gone green on the same
+# commit. Builds the Worker, applies any pending D1 migrations to the
+# production database, then deploys to Cloudflare Workers.
 #
 # Required GitHub secrets:
 #   CLOUDFLARE_API_TOKEN   – Workers Deploy token scoped to this account.
@@ -37,7 +37,6 @@ jobs:
     name: Deploy to Cloudflare Workers
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    needs: []
     if: github.repository == 'distribution-os/distribution-os'
 
     steps:
@@ -49,7 +48,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version-file: .nvmrc
+          node-version: 22
           cache: npm
           cache-dependency-path: package-lock.json
 

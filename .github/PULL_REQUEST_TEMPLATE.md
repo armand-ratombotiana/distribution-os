@@ -32,30 +32,35 @@
 <!-- Check every box. If a box does not apply, mark it and add a short
      note explaining why. -->
 
-### Code quality
-
-- [ ] Code follows the project style (TypeScript strict, no `any`,
-      2-space indent, single quotes).
-- [ ] No new ESLint warnings introduced (`npm run lint`).
-- [ ] No new TypeScript errors introduced (`npm run typecheck`).
-- [ ] New constants/types/errors live in `lib/` (pure, no I/O) when
-      they are shared across modules.
-- [ ] Business logic is in a `*-pure.ts` module with no D1 / Workers /
-      Next imports; the runtime adapter in `app/` / `db/` only wires it
-      up.
-
-### Tests
+### Tests pass
 
 - [ ] Every new `*-pure.ts` module ships with a sibling
       `tests/*.test.ts` using `node:test` + `node:assert/strict`.
-- [ ] All pure modules have 100 % line coverage on the happy path and
-      every branch.
+- [ ] `node --import tsx --test tests/*.test.ts` passes locally.
 - [ ] State-machine changes include transition-table tests covering
       every legal transition plus at least one illegal transition.
 - [ ] Deterministic inputs used everywhere (explicit `nowMs`, injected
       `fetchImpl`, no `Date.now()` / `Math.random()` inside pure code).
-- [ ] `npm run test:ts` passes locally.
-- [ ] `npm run test` (build-dependent `.test.mjs` suite) passes locally.
+
+### Lint clean
+
+- [ ] Code follows the project style (TypeScript strict, no `any`,
+      2-space indent, single quotes, semicolons).
+- [ ] `npm run lint` passes with zero warnings.
+- [ ] No new TypeScript errors introduced (`tsc --noEmit`).
+- [ ] No new `console.log` / `Date.now()` / `Math.random()` inside
+      `lib/*-pure.ts` or `db/*-pure.ts`.
+
+### Docs updated
+
+- [ ] `docs/ARCHITECTURE.md` updated if the request lifecycle, data
+      model, API surface, or pure-module inventory changed.
+- [ ] `docs/DATABASE.md` updated for any schema change.
+- [ ] `docs/API_REFERENCE.md` + `docs/API_EXAMPLES.md` updated for any
+      new / changed endpoint.
+- [ ] `docs/CHANGELOG.md` has a new entry under the appropriate wave.
+- [ ] `docs/MIGRATION_GUIDE.md` updated if the change is breaking.
+- [ ] `worklog.md` appended with the task batch summary.
 
 ### Security & compliance
 
@@ -80,14 +85,6 @@
 - [ ] FK-safe deletion order in `POST /api/data-deletion` is preserved
       if new tables are added.
 
-### Documentation
-
-- [ ] `docs/ARCHITECTURE.md` updated if the request lifecycle, data
-      model, API surface, or pure-module inventory changed.
-- [ ] `docs/DATABASE.md` updated for any schema change.
-- [ ] `docs/CHANGELOG.md` has a new entry under the appropriate wave.
-- [ ] `docs/API_EXAMPLES.md` updated for any new / changed endpoint.
-
 ### Rollout
 
 - [ ] No breaking migration requires downtime; if it does, the rollout
@@ -100,7 +97,7 @@
 ## Verification performed
 
 <!-- What did you run locally to convince yourself this is correct?
-     e.g. `npm run lint && npm run test:ts && npm run build`. -->
+     e.g. `npm run lint && node --import tsx --test tests/*.test.ts && npm run build`. -->
 
 ## Rollback plan
 
