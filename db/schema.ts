@@ -1,85 +1,46 @@
 import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
-
-export const workspaces = sqliteTable(
-  "workspaces",
-  {
-    id: text("id").primaryKey(),
-    ownerUserId: text("owner_user_id").notNull().unique(),
-    ownerEmail: text("owner_email").notNull(),
-    displayName: text("display_name").notNull(),
-    plan: text("plan").notNull().default("founder"),
-    createdAt: integer("created_at").notNull(),
-    updatedAt: integer("updated_at").notNull(),
-  }
-);
-
-export const workspaceConnections = sqliteTable(
-  "workspace_connections",
-  {
-    id: text("id").primaryKey(),
-    workspaceId: text("workspace_id")
-      .notNull()
-      .references(() => workspaces.id, { onDelete: "cascade" }),
-    provider: text("provider").notNull(),
-    category: text("category").notNull(),
-    status: text("status").notNull().default("setup_required"),
-    scopesJson: text("scopes_json").notNull().default("[]"),
-    lastSyncAt: integer("last_sync_at"),
-    createdAt: integer("created_at").notNull(),
-    updatedAt: integer("updated_at").notNull(),
-  },
-  (table) => [
-    index("workspace_connections_workspace_updated_idx").on(
-      table.workspaceId,
-      table.updatedAt
-    ),
-  ]
-);
-
-export const missions = sqliteTable(
-  "missions",
-  {
-    id: text("id").primaryKey(),
-    workspaceId: text("workspace_id").references(() => workspaces.id, {
-      onDelete: "cascade",
-    }),
-    websiteUrl: text("website_url").notNull(),
-    productName: text("product_name").notNull(),
-    mode: text("mode").notNull(),
-    status: text("status").notNull().default("learning"),
-    currentStage: text("current_stage").notNull().default("observe"),
-    cycleNumber: integer("cycle_number").notNull().default(1),
-    paymentCount: integer("payment_count").notNull().default(0),
-    approved: integer("approved", { mode: "boolean" }).notNull().default(false),
-    missionJson: text("mission_json").notNull(),
-    createdAt: integer("created_at").notNull(),
-    updatedAt: integer("updated_at").notNull(),
-  },
-  (table) => [
-    index("missions_workspace_updated_idx").on(
-      table.workspaceId,
-      table.updatedAt
-    ),
-  ]
-);
-
-export const missionEvents = sqliteTable(
-  "mission_events",
-  {
-    id: integer("id").primaryKey({ autoIncrement: true }),
-    missionId: text("mission_id")
-      .notNull()
-      .references(() => missions.id, { onDelete: "cascade" }),
-    eventType: text("event_type").notNull(),
-    title: text("title").notNull(),
-    detail: text("detail").notNull(),
-    actor: text("actor").notNull(),
-    createdAt: integer("created_at").notNull(),
-  },
-  (table) => [
-    index("mission_events_mission_created_idx").on(
-      table.missionId,
-      table.createdAt
-    ),
-  ]
-);
+export const workspaces = sqliteTable("workspaces", { id: text("id").primaryKey(), ownerUserId: text("owner_user_id").notNull().unique(), ownerEmail: text("owner_email").notNull(), displayName: text("display_name").notNull(), plan: text("plan").notNull().default("founder"), createdAt: integer("created_at").notNull(), updatedAt: integer("updated_at").notNull() });
+export const workspaceConnections = sqliteTable("workspace_connections", { id: text("id").primaryKey(), workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }), provider: text("provider").notNull(), category: text("category").notNull(), status: text("status").notNull().default("setup_required"), scopesJson: text("scopes_json").notNull().default("[]"), lastSyncAt: integer("last_sync_at"), createdAt: integer("created_at").notNull(), updatedAt: integer("updated_at").notNull() }, (table) => [index("workspace_connections_workspace_updated_idx").on(table.workspaceId, table.updatedAt)]);
+export const missions = sqliteTable("missions", { id: text("id").primaryKey(), workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }), websiteUrl: text("website_url").notNull(), productName: text("product_name").notNull(), mode: text("mode").notNull(), status: text("status").notNull().default("learning"), currentStage: text("current_stage").notNull().default("observe"), cycleNumber: integer("cycle_number").notNull().default(1), paymentCount: integer("payment_count").notNull().default(0), approved: integer("approved", { mode: "boolean" }).notNull().default(false), missionJson: text("mission_json").notNull(), createdAt: integer("created_at").notNull(), updatedAt: integer("updated_at").notNull() }, (table) => [index("missions_workspace_updated_idx").on(table.workspaceId, table.updatedAt)]);
+export const missionEvents = sqliteTable("mission_events", { id: integer("id").primaryKey({ autoIncrement: true }), missionId: text("mission_id").notNull().references(() => missions.id, { onDelete: "cascade" }), eventType: text("event_type").notNull(), title: text("title").notNull(), detail: text("detail").notNull(), actor: text("actor").notNull(), createdAt: integer("created_at").notNull() }, (table) => [index("mission_events_mission_created_idx").on(table.missionId, table.createdAt)]);
+export const ACTION_STATUSES = ["prepared","approved","rejected","blocked","expired","executed","failed"] as const;
+export type ActionStatus = (typeof ACTION_STATUSES)[number];
+export const actionQueue = sqliteTable("action_queue", { id: text("id").primaryKey(), workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }), missionId: text("mission_id").notNull().references(() => missions.id, { onDelete: "cascade" }), actionType: text("action_type").notNull(), channel: text("channel").notNull(), title: text("title").notNull(), summary: text("summary").notNull(), payloadJson: text("payload_json").notNull(), payloadHash: text("payload_hash").notNull(), risk: text("risk").notNull().default("medium"), status: text("status").notNull().default("prepared"), blocker: text("blocker"), decidedBy: text("decided_by"), decidedAt: integer("decided_at"), expiresAt: integer("expires_at").notNull(), idempotencyKey: text("idempotency_key").notNull(), providerRequestJson: text("provider_request_json"), providerResultJson: text("provider_result_json"), createdAt: integer("created_at").notNull(), updatedAt: integer("updated_at").notNull() }, (table) => [index("action_queue_workspace_status_idx").on(table.workspaceId, table.status), index("action_queue_mission_created_idx").on(table.missionId, table.createdAt), index("action_queue_idempotency_idx").on(table.idempotencyKey)]);
+export const EVIDENCE_STATES = ["observed","inferred","needed","verified","contradicted","stale","rejected"] as const;
+export type EvidenceState = (typeof EVIDENCE_STATES)[number];
+export const EVIDENCE_SOURCE_TYPES = ["website","email","social","crm","analytics","payment","document","manual"] as const;
+export type EvidenceSourceType = (typeof EVIDENCE_SOURCE_TYPES)[number];
+export const evidence = sqliteTable("evidence", { id: text("id").primaryKey(), workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }), missionId: text("mission_id").notNull().references(() => missions.id, { onDelete: "cascade" }), sourceUrl: text("source_url"), sourceType: text("source_type").notNull(), contentHash: text("content_hash").notNull(), parserVersion: text("parser_version").notNull().default("1.0"), title: text("title").notNull(), summary: text("summary").notNull(), extractedFactsJson: text("extracted_facts_json").notNull().default("{}"), provenanceJson: text("provenance_json").notNull().default("{}"), state: text("state").notNull().default("observed"), contradictionOfId: text("contradiction_of_id"), createdAt: integer("created_at").notNull(), updatedAt: integer("updated_at").notNull() }, (table) => [index("evidence_workspace_state_idx").on(table.workspaceId, table.state), index("evidence_mission_created_idx").on(table.missionId, table.createdAt), index("evidence_content_hash_idx").on(table.contentHash)]);
+export const EXPERIMENT_STATUSES = ["draft","running","completed","stopped","blocked"] as const;
+export type ExperimentStatus = (typeof EXPERIMENT_STATUSES)[number];
+export const EXPERIMENT_DECISIONS = ["continue","change","stop","blocked","pending"] as const;
+export type ExperimentDecision = (typeof EXPERIMENT_DECISIONS)[number];
+export const experiments = sqliteTable("experiments", { id: text("id").primaryKey(), workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }), missionId: text("mission_id").notNull().references(() => missions.id, { onDelete: "cascade" }), title: text("title").notNull(), hypothesis: text("hypothesis").notNull(), baseline: text("baseline"), variant: text("variant"), metric: text("metric").notNull(), denominator: text("denominator"), sampleExpectation: text("sample_expectation"), deadline: integer("deadline"), killRule: text("kill_rule").notNull(), result: text("result"), resultDataJson: text("result_data_json"), decision: text("decision").notNull().default("pending"), confidence: integer("confidence").notNull().default(0), strategyVersion: integer("strategy_version").notNull().default(1), status: text("status").notNull().default("draft"), createdAt: integer("created_at").notNull(), updatedAt: integer("updated_at").notNull() }, (table) => [index("experiments_workspace_status_idx").on(table.workspaceId, table.status), index("experiments_mission_created_idx").on(table.missionId, table.createdAt)]);
+export const PAYMENT_STATUSES = ["pending","succeeded","refunded","disputed","failed"] as const;
+export type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
+export const payments = sqliteTable("payments", { id: text("id").primaryKey(), workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }), missionId: text("mission_id").references(() => missions.id, { onDelete: "cascade" }), actionId: text("action_id").references(() => actionQueue.id, { onDelete: "set null" }), experimentId: text("experiment_id").references(() => experiments.id, { onDelete: "set null" }), provider: text("provider").notNull().default("stripe"), providerPaymentId: text("provider_payment_id").notNull(), amountCents: integer("amount_cents").notNull(), currency: text("currency").notNull().default("usd"), status: text("status").notNull().default("pending"), attributionConfidence: integer("attribution_confidence").notNull().default(0), attributedAt: integer("attributed_at"), receivedAt: integer("received_at").notNull(), rawEventJson: text("raw_event_json"), createdAt: integer("created_at").notNull(), updatedAt: integer("updated_at").notNull() }, (table) => [index("payments_workspace_status_idx").on(table.workspaceId, table.status), index("payments_mission_created_idx").on(table.missionId, table.createdAt), index("payments_provider_payment_idx").on(table.provider, table.providerPaymentId)]);
+export const touchpoints = sqliteTable("touchpoints", { id: text("id").primaryKey(), workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }), missionId: text("mission_id").notNull().references(() => missions.id, { onDelete: "cascade" }), actionId: text("action_id").references(() => actionQueue.id, { onDelete: "set null" }), experimentId: text("experiment_id").references(() => experiments.id, { onDelete: "set null" }), channel: text("channel").notNull(), eventType: text("event_type").notNull(), occurredAt: integer("occurred_at").notNull(), receivedAt: integer("received_at").notNull(), providerEventId: text("provider_event_id"), rawEventJson: text("raw_event_json"), createdAt: integer("created_at").notNull() }, (table) => [index("touchpoints_workspace_mission_idx").on(table.workspaceId, table.missionId), index("touchpoints_action_idx").on(table.actionId), index("touchpoints_provider_event_idx").on(table.providerEventId)]);
+export const CONNECTOR_STATUSES = ["setup_required","authorized","connected","healthy","degraded","disconnected","revoked","error"] as const;
+export type ConnectorStatus = (typeof CONNECTOR_STATUSES)[number];
+export const connectorInstallations = sqliteTable("connector_installations", { id: text("id").primaryKey(), workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }), provider: text("provider").notNull(), category: text("category").notNull(), status: text("status").notNull().default("setup_required"), scopesJson: text("scopes_json").notNull().default("[]"), capabilitiesJson: text("capabilities_json").notNull().default("[]"), tokenReference: text("token_reference"), tokenExpiresAt: integer("token_expires_at"), lastSyncAt: integer("last_sync_at"), lastError: text("last_error"), healthCheckedAt: integer("health_checked_at"), createdAt: integer("created_at").notNull(), updatedAt: integer("updated_at").notNull() }, (table) => [index("connector_installations_workspace_status_idx").on(table.workspaceId, table.status), index("connector_installations_provider_idx").on(table.provider)]);
+export const AUDIT_CATEGORIES = ["auth","role","approval","connector","action","payment","export","deletion","security","config"] as const;
+export type AuditCategory = (typeof AUDIT_CATEGORIES)[number];
+export const auditEvents = sqliteTable("audit_events", { id: integer("id").primaryKey({ autoIncrement: true }), workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }), actorUserId: text("actor_user_id"), eventCategory: text("event_category").notNull(), eventType: text("event_type").notNull(), actionId: text("action_id"), resourceType: text("resource_type"), resourceId: text("resource_id"), detailJson: text("detail_json").notNull().default("{}"), ipHash: text("ip_hash"), createdAt: integer("created_at").notNull() }, (table) => [index("audit_events_workspace_created_idx").on(table.workspaceId, table.createdAt), index("audit_events_category_idx").on(table.eventCategory, table.createdAt)]);
+export const AGENT_RUN_STATUSES = ["running","completed","failed","cancelled"] as const;
+export type AgentRunStatus = (typeof AGENT_RUN_STATUSES)[number];
+export const agentRuns = sqliteTable("agent_runs", { id: text("id").primaryKey(), workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }), missionId: text("mission_id").notNull().references(() => missions.id, { onDelete: "cascade" }), agentName: text("agent_name").notNull(), promptVersion: text("prompt_version").notNull().default("1.0"), model: text("model").notNull(), status: text("status").notNull().default("running"), inputRefsJson: text("input_refs_json").notNull().default("[]"), outputRefsJson: text("output_refs_json").notNull().default("[]"), tokensInput: integer("tokens_input").notNull().default(0), tokensOutput: integer("tokens_output").notNull().default(0), costCents: integer("cost_cents").notNull().default(0), latencyMs: integer("latency_ms").notNull().default(0), error: text("error"), startedAt: integer("started_at").notNull(), completedAt: integer("completed_at"), createdAt: integer("created_at").notNull() }, (table) => [index("agent_runs_workspace_mission_idx").on(table.workspaceId, table.missionId), index("agent_runs_status_idx").on(table.status)]);
+export const agentSteps = sqliteTable("agent_steps", { id: text("id").primaryKey(), runId: text("run_id").notNull().references(() => agentRuns.id, { onDelete: "cascade" }), stepIndex: integer("step_index").notNull(), toolName: text("tool_name"), toolInputJson: text("tool_input_json"), toolOutputJson: text("tool_output_json"), status: text("status").notNull().default("running"), startedAt: integer("started_at").notNull(), completedAt: integer("completed_at"), createdAt: integer("created_at").notNull() }, (table) => [index("agent_steps_run_idx").on(table.runId, table.stepIndex)]);
+export const ORG_ROLES = ["owner","admin","member","viewer"] as const;
+export type OrgRole = (typeof ORG_ROLES)[number];
+export const organizations = sqliteTable("organizations", { id: text("id").primaryKey(), name: text("name").notNull(), slug: text("slug").notNull().unique(), createdAt: integer("created_at").notNull(), updatedAt: integer("updated_at").notNull() });
+export const organizationMemberships = sqliteTable("organization_memberships", { id: text("id").primaryKey(), organizationId: text("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }), userId: text("user_id").notNull(), role: text("role").notNull().default("member"), createdAt: integer("created_at").notNull(), updatedAt: integer("updated_at").notNull() }, (table) => [index("org_memberships_org_idx").on(table.organizationId), index("org_memberships_user_idx").on(table.userId)]);
+export const organizationInvitations = sqliteTable("organization_invitations", { id: text("id").primaryKey(), organizationId: text("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }), email: text("email").notNull(), role: text("role").notNull().default("member"), tokenHash: text("token_hash").notNull(), expiresAt: integer("expires_at").notNull(), acceptedAt: integer("accepted_at"), createdAt: integer("created_at").notNull() }, (table) => [index("org_invitations_org_idx").on(table.organizationId), index("org_invitations_email_idx").on(table.email)]);
+export const CONTENT_STATUSES = ["draft","in_review","approved","scheduled","published","failed","archived"] as const;
+export type ContentStatus = (typeof CONTENT_STATUSES)[number];
+export const contentAssets = sqliteTable("content_assets", { id: text("id").primaryKey(), workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }), missionId: text("mission_id").notNull().references(() => missions.id, { onDelete: "cascade" }), actionId: text("action_id").references(() => actionQueue.id, { onDelete: "set null" }), platform: text("platform").notNull(), format: text("format").notNull(), hook: text("hook").notNull(), body: text("body").notNull(), cta: text("cta").notNull(), status: text("status").notNull().default("draft"), variantOfId: text("variant_of_id"), approvedBy: text("approved_by"), approvedAt: integer("approved_at"), scheduledAt: integer("scheduled_at"), publishedAt: integer("published_at"), providerId: text("provider_id"), createdAt: integer("created_at").notNull(), updatedAt: integer("updated_at").notNull() }, (table) => [index("content_assets_workspace_status_idx").on(table.workspaceId, table.status), index("content_assets_mission_created_idx").on(table.missionId, table.createdAt)]);
+export const CONTACT_STATUSES = ["new","qualified","contacted","replied","meeting","converted","rejected","unsubscribed"] as const;
+export type ContactStatus = (typeof CONTACT_STATUSES)[number];
+export const contacts = sqliteTable("contacts", { id: text("id").primaryKey(), workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }), missionId: text("mission_id").references(() => missions.id, { onDelete: "set null" }), email: text("email"), name: text("name"), company: text("company"), role: text("role"), source: text("source").notNull().default("manual"), status: text("status").notNull().default("new"), consentGiven: integer("consent_given", { mode: "boolean" }).notNull().default(false), qualificationSignalsJson: text("qualification_signals_json").notNull().default("{}"), lastContactedAt: integer("last_contacted_at"), convertedAt: integer("converted_at"), createdAt: integer("created_at").notNull(), updatedAt: integer("updated_at").notNull() }, (table) => [index("contacts_workspace_status_idx").on(table.workspaceId, table.status), index("contacts_email_idx").on(table.email)]);
+export const workspaceSettings = sqliteTable("workspace_settings", { id: text("id").primaryKey(), workspaceId: text("workspace_id").notNull().unique().references(() => workspaces.id, { onDelete: "cascade" }), monthlyBudgetCents: integer("monthly_budget_cents").notNull().default(10000), monthlySpentCents: integer("monthly_spent_cents").notNull().default(0), dailyBudgetCents: integer("daily_budget_cents").notNull().default(2000), dailySpentCents: integer("daily_spent_cents").notNull().default(0), perActionBudgetCents: integer("per_action_budget_cents").notNull().default(1000), quietHoursStart: integer("quiet_hours_start").notNull().default(22), quietHoursEnd: integer("quiet_hours_end").notNull().default(8), timezone: text("timezone").notNull().default("UTC"), forbiddenClaimsJson: text("forbidden_claims_json").notNull().default("[]"), brandVoiceJson: text("brand_voice_json").notNull().default("{}"), retentionDays: integer("retention_days").notNull().default(365), autoApproveLowRisk: integer("auto_approve_low_risk", { mode: "boolean" }).notNull().default(false), maxDailyActions: integer("max_daily_actions").notNull().default(50), createdAt: integer("created_at").notNull(), updatedAt: integer("updated_at").notNull() });
+export const missionVersions = sqliteTable("mission_versions", { id: text("id").primaryKey(), workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }), missionId: text("mission_id").notNull().references(() => missions.id, { onDelete: "cascade" }), versionNumber: integer("version_number").notNull(), missionJson: text("mission_json").notNull(), changeReason: text("change_reason").notNull(), createdBy: text("created_by").notNull(), createdAt: integer("created_at").notNull() }, (table) => [index("mission_versions_mission_idx").on(table.missionId, table.versionNumber)]);
+export const strategyVersions = sqliteTable("strategy_versions", { id: text("id").primaryKey(), workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }), missionId: text("mission_id").notNull().references(() => missions.id, { onDelete: "cascade" }), versionNumber: integer("version_number").notNull(), strategyJson: text("strategy_json").notNull(), hypothesis: text("hypothesis").notNull(), confidence: integer("confidence").notNull().default(0), changeReason: text("change_reason").notNull(), createdBy: text("created_by").notNull(), createdAt: integer("created_at").notNull() }, (table) => [index("strategy_versions_mission_idx").on(table.missionId, table.versionNumber)]);
