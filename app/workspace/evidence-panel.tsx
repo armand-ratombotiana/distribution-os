@@ -13,6 +13,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { EmptyState } from "./empty-state";
 
 type EvidenceState =
   | "observed"
@@ -218,9 +219,11 @@ export function EvidencePanel({ missionId }: { missionId: string }) {
           <LoaderCircle className="animate-spin" /> Loading evidence…
         </div>
       ) : items.length === 0 ? (
-        <div className="ws-empty">
-          <Database /> No evidence recorded yet. Capture the first observation above.
-        </div>
+        <EmptyState
+          icon={Database}
+          title="No evidence recorded yet"
+          description="Capture the first observation above — every claim flows through the seven-state evidence ledger."
+        />
       ) : (
         <div className="ws-cards">
           {items.map((item) => (

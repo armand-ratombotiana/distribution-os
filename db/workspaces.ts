@@ -87,3 +87,238 @@ export async function requestConnector(workspaceId: string, provider: string, ca
   await db.prepare("INSERT INTO workspace_connections (id, workspace_id, provider, category, status, scopes_json, created_at, updated_at) VALUES (?, ?, ?, ?, 'setup_required', '[]', ?, ?) ON CONFLICT(id) DO UPDATE SET category = excluded.category, updated_at = excluded.updated_at").bind(id, workspaceId, provider, category, now, now).run();
   return db.prepare("SELECT id, provider, category, status, scopes_json, last_sync_at, updated_at FROM workspace_connections WHERE id = ? LIMIT 1").bind(id).first<WorkspaceConnection>();
 }
+
+export type WorkspaceDashboard = {
+  workspace_id: string;
+  display_name: string;
+  plan: string;
+  mission_count: number;
+  total_actions: number;
+  total_evidence: number;
+  total_experiments: number;
+  total_payments: number;
+  total_touchpoints: number;
+  total_contacts: number;
+  total_content_assets: number;
+  succeeded_payment_count: number;
+  pending_approval_count: number;
+  recent_activity: WorkspaceDashboardActivity[];
+  generated_at: number;
+};
+
+export type WorkspaceDashboardActivity = {
+  kind:
+    | "mission_event"
+    | "action"
+    | "evidence"
+    | "experiment"
+    | "payment"
+    | "touchpoint"
+    | "audit_event";
+  id: string;
+  title: string;
+  occurred_at: number;
+};
+
+/**
+ * Aggregate a workspace-wide dashboard view in a single round-trip of parallel
+ * `COUNT(*)` queries plus a recent-activity union. The recent-activity list
+ * interleaves the newest rows from `mission_events`, `action_queue`,
+ * `evidence`, `experiments`, `payments`, `touchpoints` and `audit_events` —
+ * every row is mapped to a `{kind, id, title, occurred_at}` envelope so the
+ * client can render a unified timeline without a second request.
+ */
+export async function getWorkspaceDashboard(
+  workspaceId: string,
+): Promise<WorkspaceDashboard | null> {
+  const db = getRawDb();
+  const workspace = await db
+    .prepare("SELECT id, display_name, plan FROM workspaces WHERE id = ? LIMIT 1")
+    .bind(workspaceId)
+    .first<Workspace>();
+  if (!workspace) return null;
+
+  const [
+    missionCountResult,
+    actionCountResult,
+    evidenceCountResult,
+    experimentCountResult,
+    paymentCountResult,
+    touchpointCountResult,
+    contactCountResult,
+    contentCountResult,
+    succeededPaymentResult,
+    pendingApprovalResult,
+    missionEventsResult,
+    actionsResult,
+    evidenceResult,
+    experimentsResult,
+    paymentsResult,
+    touchpointsResult,
+    auditEventsResult,
+  ] = await Promise.all([
+    db
+      .prepare("SELECT COUNT(*) AS count FROM missions WHERE workspace_id = ?")
+      .bind(workspaceId)
+      .first<{ count: number }>(),
+    db
+      .prepare("SELECT COUNT(*) AS count FROM action_queue WHERE workspace_id = ?")
+      .bind(workspaceId)
+      .first<{ count: number }>(),
+    db
+      .prepare("SELECT COUNT(*) AS count FROM evidence WHERE workspace_id = ?")
+      .bind(workspaceId)
+      .first<{ count: number }>(),
+    db
+      .prepare("SELECT COUNT(*) AS count FROM experiments WHERE workspace_id = ?")
+      .bind(workspaceId)
+      .first<{ count: number }>(),
+    db
+      .prepare("SELECT COUNT(*) AS count FROM payments WHERE workspace_id = ?")
+      .bind(workspaceId)
+      .first<{ count: number }>(),
+    db
+      .prepare("SELECT COUNT(*) AS count FROM touchpoints WHERE workspace_id = ?")
+      .bind(workspaceId)
+      .first<{ count: number }>(),
+    db
+      .prepare("SELECT COUNT(*) AS count FROM contacts WHERE workspace_id = ?")
+      .bind(workspaceId)
+      .first<{ count: number }>(),
+    db
+      .prepare("SELECT COUNT(*) AS count FROM content_assets WHERE workspace_id = ?")
+      .bind(workspaceId)
+      .first<{ count: number }>(),
+    db
+      .prepare(
+        "SELECT COUNT(*) AS count FROM payments WHERE workspace_id = ? AND status = 'succeeded'",
+      )
+      .bind(workspaceId)
+      .first<{ count: number }>(),
+    db
+      .prepare(
+        "SELECT COUNT(*) AS count FROM action_queue WHERE workspace_id = ? AND status = 'prepared'",
+      )
+      .bind(workspaceId)
+      .first<{ count: number }>(),
+    db
+      .prepare(
+        "SELECT id, title, created_at FROM mission_events WHERE mission_id IN (SELECT id FROM missions WHERE workspace_id = ?) ORDER BY created_at DESC LIMIT 10",
+      )
+      .bind(workspaceId)
+      .all<{ id: number; title: string; created_at: number }>(),
+    db
+      .prepare(
+        "SELECT id, title, created_at FROM action_queue WHERE workspace_id = ? ORDER BY created_at DESC LIMIT 10",
+      )
+      .bind(workspaceId)
+      .all<{ id: string; title: string; created_at: number }>(),
+    db
+      .prepare(
+        "SELECT id, title, created_at FROM evidence WHERE workspace_id = ? ORDER BY created_at DESC LIMIT 10",
+      )
+      .bind(workspaceId)
+      .all<{ id: string; title: string; created_at: number }>(),
+    db
+      .prepare(
+        "SELECT id, title, created_at FROM experiments WHERE workspace_id = ? ORDER BY created_at DESC LIMIT 10",
+      )
+      .bind(workspaceId)
+      .all<{ id: string; title: string; created_at: number }>(),
+    db
+      .prepare(
+        "SELECT id, status, received_at FROM payments WHERE workspace_id = ? ORDER BY received_at DESC LIMIT 10",
+      )
+      .bind(workspaceId)
+      .all<{ id: string; status: string; received_at: number }>(),
+    db
+      .prepare(
+        "SELECT id, channel, occurred_at FROM touchpoints WHERE workspace_id = ? ORDER BY occurred_at DESC LIMIT 10",
+      )
+      .bind(workspaceId)
+      .all<{ id: string; channel: string; occurred_at: number }>(),
+    db
+      .prepare(
+        "SELECT id, event_type, created_at FROM audit_events WHERE workspace_id = ? ORDER BY created_at DESC LIMIT 10",
+      )
+      .bind(workspaceId)
+      .all<{ id: number; event_type: string; created_at: number }>(),
+  ]);
+
+  const activity: WorkspaceDashboardActivity[] = [];
+  for (const row of missionEventsResult.results) {
+    activity.push({
+      kind: "mission_event",
+      id: String(row.id),
+      title: row.title,
+      occurred_at: row.created_at,
+    });
+  }
+  for (const row of actionsResult.results) {
+    activity.push({
+      kind: "action",
+      id: row.id,
+      title: row.title,
+      occurred_at: row.created_at,
+    });
+  }
+  for (const row of evidenceResult.results) {
+    activity.push({
+      kind: "evidence",
+      id: row.id,
+      title: row.title,
+      occurred_at: row.created_at,
+    });
+  }
+  for (const row of experimentsResult.results) {
+    activity.push({
+      kind: "experiment",
+      id: row.id,
+      title: row.title,
+      occurred_at: row.created_at,
+    });
+  }
+  for (const row of paymentsResult.results) {
+    activity.push({
+      kind: "payment",
+      id: row.id,
+      title: `payment ${row.status}`,
+      occurred_at: row.received_at,
+    });
+  }
+  for (const row of touchpointsResult.results) {
+    activity.push({
+      kind: "touchpoint",
+      id: row.id,
+      title: `touchpoint ${row.channel}`,
+      occurred_at: row.occurred_at,
+    });
+  }
+  for (const row of auditEventsResult.results) {
+    activity.push({
+      kind: "audit_event",
+      id: String(row.id),
+      title: row.event_type,
+      occurred_at: row.created_at,
+    });
+  }
+  activity.sort((a, b) => b.occurred_at - a.occurred_at);
+
+  return {
+    workspace_id: workspace.id,
+    display_name: workspace.display_name,
+    plan: workspace.plan,
+    mission_count: missionCountResult?.count ?? 0,
+    total_actions: actionCountResult?.count ?? 0,
+    total_evidence: evidenceCountResult?.count ?? 0,
+    total_experiments: experimentCountResult?.count ?? 0,
+    total_payments: paymentCountResult?.count ?? 0,
+    total_touchpoints: touchpointCountResult?.count ?? 0,
+    total_contacts: contactCountResult?.count ?? 0,
+    total_content_assets: contentCountResult?.count ?? 0,
+    succeeded_payment_count: succeededPaymentResult?.count ?? 0,
+    pending_approval_count: pendingApprovalResult?.count ?? 0,
+    recent_activity: activity.slice(0, 25),
+    generated_at: Date.now(),
+  };
+}

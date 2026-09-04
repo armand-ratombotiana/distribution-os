@@ -41,6 +41,18 @@ export type UpdateContentStatusInput = {
   provider_id?: string | null;
 };
 
+export type UpdateContentAssetInput = {
+  mission_id?: string;
+  action_id?: string | null;
+  platform?: string;
+  format?: string;
+  hook?: string;
+  body?: string;
+  cta?: string;
+  variant_of_id?: string | null;
+  provider_id?: string | null;
+};
+
 /**
  * Insert a new content asset in the `draft` status. The row is validated by
  * the pure helper before any SQL is executed so that required-field and
@@ -230,6 +242,92 @@ export async function updateContentStatus(
       scheduledAt,
       publishedAt,
       providerId,
+      now,
+      workspaceId,
+      assetId,
+    )
+    .run();
+
+  const updated = await getContentAsset(workspaceId, assetId);
+  if (!updated) {
+    throw new Error(`Content asset disappeared after update: ${assetId}`);
+  }
+  return updated;
+}
+
+/**
+ * Patch editable fields on a content asset without transitioning its lifecycle
+ * status. This is the complement to `updateContentStatus` — use it to update
+ * copy (hook/body/cta), platform/format, mission association or provider id.
+ *
+ * Refuses to mutate an `archived` asset (the only terminal content status) so
+ * that the published record stays immutable. The merged row is re-validated by
+ * `validateContent` (pure helper) before any SQL is executed. Lifecycle-only
+ * fields (`status`, `approved_by`, `approved_at`, `scheduled_at`,
+ * `published_at`) are intentionally not exposed here — callers should use
+ * `updateContentStatus` for those.
+ */
+export async function updateContentAsset(
+  workspaceId: string,
+  assetId: string,
+  updates: UpdateContentAssetInput,
+): Promise<ContentAssetRow> {
+  const db = getRawDb();
+  const current = await getContentAsset(workspaceId, assetId);
+  if (!current) {
+    throw new Error(`Content asset not found: ${assetId}`);
+  }
+  if (isTerminal(current.status)) {
+    throw new Error(
+      `Content asset ${assetId} is in terminal status ${current.status} and cannot be edited`,
+    );
+  }
+
+  const merged: ContentAssetRow = {
+    ...current,
+    mission_id:
+      updates.mission_id !== undefined ? updates.mission_id : current.mission_id,
+    action_id:
+      updates.action_id !== undefined
+        ? updates.action_id
+        : current.action_id,
+    platform:
+      updates.platform !== undefined ? updates.platform : current.platform,
+    format: updates.format !== undefined ? updates.format : current.format,
+    hook: updates.hook !== undefined ? updates.hook : current.hook,
+    body: updates.body !== undefined ? updates.body : current.body,
+    cta: updates.cta !== undefined ? updates.cta : current.cta,
+    variant_of_id:
+      updates.variant_of_id !== undefined
+        ? updates.variant_of_id
+        : current.variant_of_id,
+    provider_id:
+      updates.provider_id !== undefined
+        ? updates.provider_id
+        : current.provider_id,
+  };
+  const validation = validateContent(merged);
+  if (!validation.valid) {
+    throw new Error(
+      `Invalid content asset update: ${validation.errors.join("; ")}`,
+    );
+  }
+
+  const now = Date.now();
+  await db
+    .prepare(
+      "UPDATE content_assets SET mission_id = ?, action_id = ?, platform = ?, format = ?, hook = ?, body = ?, cta = ?, variant_of_id = ?, provider_id = ?, updated_at = ? WHERE workspace_id = ? AND id = ?",
+    )
+    .bind(
+      merged.mission_id,
+      merged.action_id,
+      merged.platform,
+      merged.format,
+      merged.hook,
+      merged.body,
+      merged.cta,
+      merged.variant_of_id,
+      merged.provider_id,
       now,
       workspaceId,
       assetId,

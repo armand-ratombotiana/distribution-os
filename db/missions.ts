@@ -1,6 +1,27 @@
 import { getRawDb } from "./index";
+import {
+  getMissionReadiness,
+  type MissionStateSnapshot,
+} from "../lib/mission-lifecycle-pure";
 
 export type MissionMode = "simulation" | "live";
+
+export type MissionSummary = {
+  mission_id: string;
+  current_stage: string;
+  cycle_number: number;
+  approved: boolean;
+  status: string;
+  action_count: number;
+  evidence_count: number;
+  experiment_count: number;
+  payment_count: number;
+  pending_approval_count: number;
+  open_experiment_count: number;
+  readiness_score: number;
+  can_advance: boolean;
+  blocking_reasons: string[];
+};
 
 export type MissionState = {
   mission_id: string;
@@ -204,4 +225,101 @@ export async function approveMission(missionId: string, workspaceId: string) {
   ]);
 
   return getMission(missionId, workspaceId);
+}
+
+/**
+ * Aggregated mission stats used by the mission summary route and workspace
+ * dashboard. Returns null when the mission does not exist in the workspace.
+ *
+ * The counts come from per-table `COUNT(*)` queries scoped to the
+ * (workspace_id, mission_id) pair — each query is a single indexed read so
+ * the call stays cheap even on missions with thousands of rows. The
+ * readiness score is derived from `getMissionReadiness` in the pure
+ * lifecycle module, which factors in pending approvals and open experiments.
+ */
+export async function getMissionSummary(
+  missionId: string,
+  workspaceId: string,
+): Promise<MissionSummary | null> {
+  const db = getRawDb();
+  const row = await db
+    .prepare("SELECT * FROM missions WHERE id = ? AND workspace_id = ? LIMIT 1")
+    .bind(missionId, workspaceId)
+    .first<MissionRow>();
+  if (!row) return null;
+
+  const [
+    actionCountResult,
+    evidenceCountResult,
+    experimentCountResult,
+    paymentCountResult,
+    pendingApprovalResult,
+    openExperimentResult,
+  ] = await Promise.all([
+    db
+      .prepare(
+        "SELECT COUNT(*) AS count FROM action_queue WHERE workspace_id = ? AND mission_id = ?",
+      )
+      .bind(workspaceId, missionId)
+      .first<{ count: number }>(),
+    db
+      .prepare(
+        "SELECT COUNT(*) AS count FROM evidence WHERE workspace_id = ? AND mission_id = ?",
+      )
+      .bind(workspaceId, missionId)
+      .first<{ count: number }>(),
+    db
+      .prepare(
+        "SELECT COUNT(*) AS count FROM experiments WHERE workspace_id = ? AND mission_id = ?",
+      )
+      .bind(workspaceId, missionId)
+      .first<{ count: number }>(),
+    db
+      .prepare(
+        "SELECT COUNT(*) AS count FROM payments WHERE workspace_id = ? AND mission_id = ?",
+      )
+      .bind(workspaceId, missionId)
+      .first<{ count: number }>(),
+    db
+      .prepare(
+        "SELECT COUNT(*) AS count FROM action_queue WHERE workspace_id = ? AND mission_id = ? AND status = 'prepared'",
+      )
+      .bind(workspaceId, missionId)
+      .first<{ count: number }>(),
+    db
+      .prepare(
+        "SELECT COUNT(*) AS count FROM experiments WHERE workspace_id = ? AND mission_id = ? AND status IN ('draft', 'running')",
+      )
+      .bind(workspaceId, missionId)
+      .first<{ count: number }>(),
+  ]);
+
+  const snapshot: MissionStateSnapshot = {
+    current_stage: row.current_stage,
+    cycle_number: row.cycle_number,
+    payment_count: row.payment_count,
+    approved: Boolean(row.approved),
+    status: row.status,
+  };
+  const readiness = getMissionReadiness(snapshot, {
+    pendingApprovals: pendingApprovalResult?.count ?? 0,
+    openExperiments: openExperimentResult?.count ?? 0,
+  });
+
+  return {
+    mission_id: row.id,
+    current_stage: row.current_stage,
+    cycle_number: row.cycle_number,
+    approved: Boolean(row.approved),
+    status: row.status,
+    action_count: actionCountResult?.count ?? 0,
+    evidence_count: evidenceCountResult?.count ?? 0,
+    experiment_count: experimentCountResult?.count ?? 0,
+    payment_count: paymentCountResult?.count ?? 0,
+    pending_approval_count: pendingApprovalResult?.count ?? 0,
+    open_experiment_count: openExperimentResult?.count ?? 0,
+    readiness_score: readiness.readiness_score,
+    can_advance: readiness.can_advance,
+    blocking_reasons: readiness.blocking_reasons,
+  };
 }

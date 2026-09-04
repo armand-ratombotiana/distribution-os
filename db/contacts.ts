@@ -11,6 +11,7 @@ import {
   canTransition,
   isTerminal,
   validateContact,
+  validateEmail,
   type ContactRow,
 } from "./contacts-pure";
 
@@ -36,6 +37,17 @@ export type ListContactsOptions = {
 export type UpdateContactStatusInput = {
   last_contacted_at?: number | null;
   converted_at?: number | null;
+};
+
+export type UpdateContactInput = {
+  mission_id?: string | null;
+  email?: string | null;
+  name?: string | null;
+  company?: string | null;
+  role?: string | null;
+  source?: string;
+  consent_given?: boolean;
+  qualification_signals?: Record<string, unknown> | null;
 };
 
 /**
@@ -213,6 +225,106 @@ export async function updateContactStatus(
       newStatus,
       lastContactedAt,
       convertedAt,
+      now,
+      workspaceId,
+      contactId,
+    )
+    .run();
+
+  const updated = await getContact(workspaceId, contactId);
+  if (!updated) {
+    throw new Error(`Contact disappeared after update: ${contactId}`);
+  }
+  return updated;
+}
+
+/**
+ * Patch one or more editable fields on a contact without transitioning its
+ * lifecycle status. This is the complement to `updateContactStatus` — use it
+ * for changing email, name, company, role, source, consent flag, mission
+ * association or qualification signals.
+ *
+ * Refuses to mutate a terminal-status contact (`converted`, `rejected`,
+ * `unsubscribed`) so that historical records stay immutable. The merged row is
+ * re-validated by `validateContact` (pure helper) before any SQL is executed.
+ */
+export async function updateContact(
+  workspaceId: string,
+  contactId: string,
+  updates: UpdateContactInput,
+): Promise<ContactRow> {
+  const db = getRawDb();
+  const current = await getContact(workspaceId, contactId);
+  if (!current) {
+    throw new Error(`Contact not found: ${contactId}`);
+  }
+  if (isTerminal(current.status)) {
+    throw new Error(
+      `Contact ${contactId} is in terminal status ${current.status} and cannot be edited`,
+    );
+  }
+
+  const nextEmail =
+    updates.email !== undefined ? updates.email || null : current.email;
+  if (nextEmail && !validateEmail(nextEmail)) {
+    throw new Error(`Invalid email: ${nextEmail}`);
+  }
+
+  const nextSignals =
+    updates.qualification_signals !== undefined
+      ? updates.qualification_signals === null
+        ? "{}"
+        : JSON.stringify(updates.qualification_signals)
+      : current.qualification_signals_json;
+
+  const merged: ContactRow = {
+    ...current,
+    mission_id:
+      updates.mission_id !== undefined
+        ? updates.mission_id || null
+        : current.mission_id,
+    email: nextEmail,
+    name:
+      updates.name !== undefined
+        ? updates.name || null
+        : current.name,
+    company:
+      updates.company !== undefined
+        ? updates.company || null
+        : current.company,
+    role:
+      updates.role !== undefined
+        ? updates.role || null
+        : current.role,
+    source:
+      updates.source !== undefined ? updates.source : current.source,
+    consent_given:
+      updates.consent_given !== undefined
+        ? updates.consent_given
+          ? 1
+          : 0
+        : current.consent_given,
+    qualification_signals_json: nextSignals,
+  };
+  const validation = validateContact(merged);
+  if (!validation.valid) {
+    throw new Error(`Invalid contact update: ${validation.errors.join("; ")}`);
+  }
+
+  const now = Date.now();
+  await db
+    .prepare(
+      "UPDATE contacts SET mission_id = ?, email = ?, name = ?, company = ?, role = ?, source = ?, consent_given = ?, qualification_signals_json = ?, updated_at = ? WHERE workspace_id = ? AND id = ?",
+    )
+    .bind(
+      merged.mission_id,
+      merged.email,
+      merged.name,
+      merged.company,
+      merged.role,
+      merged.source,
+      merged.consent_given,
+      merged.qualification_signals_json,
       now,
       workspaceId,
       contactId,

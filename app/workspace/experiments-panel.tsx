@@ -12,6 +12,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { EmptyState } from "./empty-state";
 
 type ExperimentStatus =
   | "draft"
@@ -209,9 +210,11 @@ export function ExperimentsPanel({ missionId }: { missionId: string }) {
           <LoaderCircle className="animate-spin" /> Loading experiments…
         </div>
       ) : items.length === 0 ? (
-        <div className="ws-empty">
-          <FlaskConical /> No experiments yet. Draft the first falsifiable test above.
-        </div>
+        <EmptyState
+          icon={FlaskConical}
+          title="No experiments yet"
+          description="Draft the first falsifiable test above — every action must produce revenue or information."
+        />
       ) : (
         <div className="ws-cards">
           {items.map((item) => (

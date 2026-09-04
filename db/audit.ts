@@ -159,3 +159,48 @@ export async function getAuditEvent(
     .bind(workspaceId, eventId)
     .first<AuditEventRow>();
 }
+
+export type AuditStats = {
+  workspace_id: string;
+  total_events: number;
+  by_category: Record<string, number>;
+  generated_at: number;
+};
+
+/**
+ * Aggregate audit-event counts by category for a workspace.
+ *
+ * Returns one row per `event_category` plus a `total_events` sum. Categories
+ * that have no events are omitted from `by_category` (callers that need a
+ * fully-populated shape should merge against `AUDIT_CATEGORIES`). The single
+ * `GROUP BY` query is indexed on `(workspace_id, event_category)`.
+ */
+export async function getAuditStats(
+  workspaceId: string,
+): Promise<AuditStats> {
+  const db = getRawDb();
+  const totalResult = await db
+    .prepare(
+      "SELECT COUNT(*) AS count FROM audit_events WHERE workspace_id = ?",
+    )
+    .bind(workspaceId)
+    .first<{ count: number }>();
+  const grouped = await db
+    .prepare(
+      "SELECT event_category, COUNT(*) AS count FROM audit_events WHERE workspace_id = ? GROUP BY event_category",
+    )
+    .bind(workspaceId)
+    .all<{ event_category: string; count: number }>();
+
+  const byCategory: Record<string, number> = {};
+  for (const row of grouped.results) {
+    byCategory[row.event_category] = row.count;
+  }
+
+  return {
+    workspace_id: workspaceId,
+    total_events: totalResult?.count ?? 0,
+    by_category: byCategory,
+    generated_at: Date.now(),
+  };
+}

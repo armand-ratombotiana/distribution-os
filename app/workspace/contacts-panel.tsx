@@ -12,6 +12,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { EmptyState } from "./empty-state";
 
 type ContactStatus =
   | "new"
@@ -207,9 +208,11 @@ export function ContactsPanel({ workspaceId }: { workspaceId: string }) {
           <LoaderCircle className="animate-spin" /> Loading contacts…
         </div>
       ) : items.length === 0 ? (
-        <div className="ws-empty">
-          <Users /> No contacts yet. Add the first one above.
-        </div>
+        <EmptyState
+          icon={Users}
+          title="No contacts yet"
+          description="Add the first one above — every contact tracks consent, qualification signals and the eight-state lifecycle."
+        />
       ) : (
         <div className="ws-cards">
           {items.map((contact) => (
