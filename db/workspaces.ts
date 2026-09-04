@@ -88,6 +88,83 @@ export async function requestConnector(workspaceId: string, provider: string, ca
   return db.prepare("SELECT id, provider, category, status, scopes_json, last_sync_at, updated_at FROM workspace_connections WHERE id = ? LIMIT 1").bind(id).first<WorkspaceConnection>();
 }
 
+export type WorkspaceStats = {
+  workspace_id: string;
+  total_missions: number;
+  total_actions: number;
+  total_evidence: number;
+  total_experiments: number;
+  total_payments: number;
+  total_contacts: number;
+  total_content: number;
+  generated_at: number;
+};
+
+/**
+ * Aggregate workspace-wide row counts for the seven primary content tables.
+ *
+ * Each count comes from a single indexed `COUNT(*)` query scoped to the
+ * workspace id. The seven queries run in parallel so the call is one
+ * round-trip's worth of latency. The result is suitable for KPI cards and
+ * any "how big is this workspace" surface that does not need the heavier
+ * `recent_activity` union returned by `getWorkspaceDashboard`.
+ */
+export async function getWorkspaceStats(
+  workspaceId: string,
+): Promise<WorkspaceStats> {
+  const db = getRawDb();
+  const [
+    missionCountResult,
+    actionCountResult,
+    evidenceCountResult,
+    experimentCountResult,
+    paymentCountResult,
+    contactCountResult,
+    contentCountResult,
+  ] = await Promise.all([
+    db
+      .prepare("SELECT COUNT(*) AS count FROM missions WHERE workspace_id = ?")
+      .bind(workspaceId)
+      .first<{ count: number }>(),
+    db
+      .prepare("SELECT COUNT(*) AS count FROM action_queue WHERE workspace_id = ?")
+      .bind(workspaceId)
+      .first<{ count: number }>(),
+    db
+      .prepare("SELECT COUNT(*) AS count FROM evidence WHERE workspace_id = ?")
+      .bind(workspaceId)
+      .first<{ count: number }>(),
+    db
+      .prepare("SELECT COUNT(*) AS count FROM experiments WHERE workspace_id = ?")
+      .bind(workspaceId)
+      .first<{ count: number }>(),
+    db
+      .prepare("SELECT COUNT(*) AS count FROM payments WHERE workspace_id = ?")
+      .bind(workspaceId)
+      .first<{ count: number }>(),
+    db
+      .prepare("SELECT COUNT(*) AS count FROM contacts WHERE workspace_id = ?")
+      .bind(workspaceId)
+      .first<{ count: number }>(),
+    db
+      .prepare("SELECT COUNT(*) AS count FROM content_assets WHERE workspace_id = ?")
+      .bind(workspaceId)
+      .first<{ count: number }>(),
+  ]);
+
+  return {
+    workspace_id: workspaceId,
+    total_missions: missionCountResult?.count ?? 0,
+    total_actions: actionCountResult?.count ?? 0,
+    total_evidence: evidenceCountResult?.count ?? 0,
+    total_experiments: experimentCountResult?.count ?? 0,
+    total_payments: paymentCountResult?.count ?? 0,
+    total_contacts: contactCountResult?.count ?? 0,
+    total_content: contentCountResult?.count ?? 0,
+    generated_at: Date.now(),
+  };
+}
+
 export type WorkspaceDashboard = {
   workspace_id: string;
   display_name: string;

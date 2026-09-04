@@ -98,6 +98,51 @@ export async function getOrganization(
     .first<OrganizationRow>();
 }
 
+export type UpdateOrganizationInput = {
+  name?: string;
+  slug?: string;
+};
+
+/**
+ * Partial update for the organization that backs a workspace. Only the
+ * provided fields are written; the slug (when supplied) is normalised and
+ * validated by the pure helpers. Throws when the organisation does not exist
+ * or when the slug is malformed.
+ */
+export async function updateOrganization(
+  workspaceId: string,
+  input: UpdateOrganizationInput,
+): Promise<OrganizationRow> {
+  const current = await getOrganization(workspaceId);
+  if (!current) {
+    throw new Error(`Organization not found: ${workspaceId}`);
+  }
+  const nextName =
+    typeof input.name === "string" ? input.name.trim() : current.name;
+  if (nextName.length < 1 || nextName.length > 200) {
+    throw new Error("Organization name must be 1-200 characters");
+  }
+  const nextSlug =
+    typeof input.slug === "string"
+      ? validateSlug(normalizeSlug(input.slug))
+      : current.slug;
+
+  const db = getRawDb();
+  const now = Date.now();
+  await db
+    .prepare(
+      "UPDATE organizations SET name = ?, slug = ?, updated_at = ? WHERE id = ?",
+    )
+    .bind(nextName, nextSlug, now, workspaceId)
+    .run();
+
+  const updated = await getOrganization(workspaceId);
+  if (!updated) {
+    throw new Error("Organization disappeared after update");
+  }
+  return updated;
+}
+
 /**
  * Add a membership to the workspace's organization. If a membership for the
  * user already exists, the role is updated instead of duplicated.

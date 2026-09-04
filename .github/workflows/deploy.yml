@@ -1,0 +1,95 @@
+# Production deployment for Distribution OS.
+#
+# Triggers on every push to `main` (after the CI workflow has gone green
+# on the same commit). Deploys the built Worker to Cloudflare plus
+# applies any pending D1 migrations to the production database.
+#
+# Required GitHub secrets:
+#   CLOUDFLARE_API_TOKEN   – Workers Deploy token scoped to this account.
+#   CLOUDFLARE_ACCOUNT_ID  – Numeric Cloudflare account id.
+#
+# The job does NOT run on pull requests. Preview deploys are produced by
+# `wrangler deploy --env preview` from a developer's workstation or by a
+# separate workflow (TBD).
+
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+  # Allow manual triggering from the Actions tab for hotfixes and
+  # re-deploys of an already-shipped commit.
+  workflow_dispatch:
+
+# Serialise deploys so a rapid succession of pushes to main does not
+# race two wrangler deploys against the same Worker / D1 database.
+concurrency:
+  group: deploy-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write   # required for OIDC-based Cloudflare auth if used
+
+jobs:
+  deploy:
+    name: Deploy to Cloudflare Workers
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    needs: []
+    if: github.repository == 'distribution-os/distribution-os'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies (Sites runtime)
+        env:
+          SITES_INSTALL_TIMEOUT: 10m
+        run: npm run install:ci
+
+      - name: Build Worker
+        env:
+          SITES_BUILD_TIMEOUT: 5m
+        run: npm run build
+
+      - name: Apply D1 migrations
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npx wrangler d1 migrations apply distribution-os --remote
+
+      - name: Deploy Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy
+
+      - name: Smoke-test the live endpoint
+        env:
+          DEPLOY_URL: ${{ vars.DEPLOY_URL || 'https://distribution-os.workers.dev' }}
+        run: |
+          set -euo pipefail
+          status="$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$DEPLOY_URL" || true)"
+          if [ "$status" != "200" ]; then
+            echo "Smoke test failed: GET $DEPLOY_URL returned $status" >&2
+            exit 1
+          fi
+          echo "Smoke test passed: GET $DEPLOY_URL returned 200."
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::warning::Deploy failed for commit ${{ github.sha }} on branch ${{ github.ref }}."
+          echo "Inspect the failed step above; the previous Worker revision remains live."
