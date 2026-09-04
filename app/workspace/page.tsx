@@ -18,5 +18,5 @@ export default async function WorkspacePage({ searchParams }: { searchParams: Pr
   const initialUrl = publicWebsiteUrl(params.website_url);
   const returnTo = initialUrl ? `/workspace?website_url=${encodeURIComponent(initialUrl)}` : "/workspace";
   const user = await requireChatGPTUser(returnTo);
-  return <WorkspaceClient displayName={user.displayName} email={user.email} initialUrl={initialUrl} />;
+  return <WorkspaceClient userId={user.userId} displayName={user.displayName} email={user.email} initialUrl={initialUrl} />;
 }

@@ -127,3 +127,212 @@
 .agent-network-story { display:grid; max-width:1240px; margin:0 auto 7rem; grid-template-columns:1fr 1fr; align-items:center; gap:5rem; padding:5rem 4rem; border:1px solid rgba(255,255,255,.09); border-radius:1.5rem; background:radial-gradient(circle at 20% 45%,rgba(190,242,100,.07),transparent 34%),#0a0f19; }.agent-network-story .agent-orbit { justify-self:center; }.agent-network-copy h2 { margin:1rem 0 0; font-size:clamp(2.2rem,4vw,3.7rem); line-height:1.05; letter-spacing:-.045em; }.agent-network-copy>p:not(.landing-kicker) { margin:1.25rem 0 0; color:#7c8ca5; font-size:1rem; line-height:1.7; }.agent-network-copy>div { display:grid; grid-template-columns:repeat(3,1fr); gap:.6rem; margin-top:2rem; }.agent-network-copy>div span { display:flex; flex-direction:column; gap:.25rem; border-top:1px solid rgba(255,255,255,.09); padding-top:.8rem; color:#64748b; font-size:.72rem; }.agent-network-copy>div strong { color:#d9ff9f; font-size:1.2rem; }
 @media (max-width:1100px) { .agent-network-story { margin:0 1.5rem 5rem; grid-template-columns:1fr; padding:3rem; }.agent-network-copy { text-align:center; }.agent-network-copy .landing-kicker { justify-content:center; } }
 @media (max-width:760px) { .landing-hero.landing-hero-v3 { min-height:auto; padding:4.5rem 1rem 5rem; }.agent-network-story { margin:0 1rem 4rem; padding:2rem 1rem 3rem; }.agent-network-story .agent-orbit { width:22rem; }.agent-network-copy>div { gap:.35rem; }.agent-network-copy>div span { font-size:.62rem; } }
+
+/* ============================================================
+   Distribution OS v5 — workspace panels (B4 batch)
+   Shared form, cards and status-pill primitives reused across
+   the twelve new mission/workspace panels. Each pill set is
+   keyed to the schema constant tuples in db/schema.ts.
+   ============================================================ */
+.ws-panel { border:1px solid rgba(255,255,255,.08); border-radius:1rem; padding:1.4rem; background:#0b101a; margin-bottom:1rem; }
+.ws-panel .section-label svg { width:.9rem; }
+.ws-panel-head { display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; margin-bottom:1.2rem; }
+.ws-panel-head h2 { margin:.4rem 0 0; font-size:1.15rem; letter-spacing:-.01em; }
+.ws-panel-lede { margin:.6rem 0 0; max-width:54rem; color:#7c8ca5; font-size:.82rem; line-height:1.55; }
+.ws-panel-lede em { font-style:italic; color:#cbd5e1; }
+.ws-form { display:grid; gap:.6rem; margin-bottom:1rem; }
+.ws-form-row { display:flex; flex-wrap:wrap; align-items:center; gap:.6rem; }
+.ws-form-row>select,.ws-form-row>input { flex:1 1 12rem; }
+.ws-form-row .ws-slug-hint { color:#64748b; font-size:.72rem; }
+.ws-textarea { width:100%; border:1px solid var(--input); border-radius:calc(var(--radius) - 4px); padding:.55rem .7rem; background:transparent; color:var(--foreground); font-size:.85rem; line-height:1.5; resize:vertical; }
+.ws-error { display:flex; align-items:center; gap:.5rem; margin:.8rem 0; border:1px solid rgba(251,113,133,.25); border-radius:.65rem; padding:.65rem .85rem; background:rgba(251,113,133,.06); color:#fda4af; font-size:.78rem; }
+.ws-error svg { width:.95rem; }
+.ws-empty { display:flex; align-items:center; gap:.55rem; padding:1.6rem; border:1px dashed rgba(255,255,255,.1); border-radius:.7rem; color:#64748b; font-size:.8rem; }
+.ws-empty svg { width:1rem; color:#475569; }
+.ws-cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(20rem,1fr)); gap:.7rem; }
+.ws-card { display:flex; flex-direction:column; gap:.5rem; border:1px solid rgba(255,255,255,.07); border-radius:.8rem; padding:1rem; background:#0e1422; }
+.ws-card header { display:flex; align-items:center; justify-content:space-between; gap:.6rem; }
+.ws-card h3 { margin:.2rem 0 0; font-size:.95rem; line-height:1.35; }
+.ws-card p { margin:0; color:#94a3b8; font-size:.78rem; line-height:1.5; }
+.ws-card .ws-meta { color:#64748b; font-size:.68rem; }
+.ws-card-foot { display:flex; flex-wrap:wrap; gap:.6rem; justify-content:space-between; border-top:1px solid rgba(255,255,255,.06); padding-top:.55rem; color:#475569; font-size:.66rem; }
+.ws-card-foot small { display:flex; align-items:center; gap:.3rem; }
+.ws-card-foot svg { width:.75rem; }
+.ws-card-rows { display:grid; grid-template-columns:1fr 1fr; gap:.5rem; }
+.ws-card-rows>div { border-top:1px solid rgba(255,255,255,.06); padding-top:.45rem; }
+.ws-card-rows small { display:block; color:#64748b; font-size:.62rem; text-transform:uppercase; letter-spacing:.05em; }
+.ws-card-rows strong { display:block; margin-top:.2rem; color:#cbd5e1; font-size:.78rem; line-height:1.4; }
+.ws-card-actions { display:flex; gap:.4rem; flex-wrap:wrap; }
+.ws-error-line { color:#fda4af; font-size:.72rem; }
+.ws-result { color:#7dd3fc; font-size:.74rem; }
+.ws-contradiction { color:#fbbf24; font-size:.72rem; display:flex; align-items:center; gap:.35rem; }
+
+/* Status pill base — every variant inherits this shell. */
+[class$="-status-pill"],[class$="-state-pill"],[class$="-source-pill"],[class$="-decision-pill"],[class$="-category-pill"],[class$="-role-badge"] { display:inline-flex; align-items:center; gap:.3rem; border-radius:999px; padding:.25rem .55rem; border:1px solid rgba(255,255,255,.1); background:rgba(255,255,255,.04); color:#cbd5e1; font-size:.66rem; font-weight:700; letter-spacing:.02em; text-transform:capitalize; }
+
+/* Action queue — 7 statuses + 3 risk levels. */
+.action-status-prepared { background:rgba(125,211,252,.1); color:#7dd3fc; border-color:rgba(125,211,252,.25); }
+.action-status-approved { background:rgba(190,242,100,.12); color:#d9ff9f; border-color:rgba(190,242,100,.3); }
+.action-status-rejected { background:rgba(251,113,133,.1); color:#fda4af; border-color:rgba(251,113,133,.25); }
+.action-status-blocked { background:rgba(251,191,36,.1); color:#fbbf24; border-color:rgba(251,191,36,.25); }
+.action-status-expired { background:rgba(148,163,184,.1); color:#94a3b8; border-color:rgba(148,163,184,.25); }
+.action-status-executed { background:rgba(134,239,172,.12); color:#86efac; border-color:rgba(134,239,172,.3); }
+.action-status-failed { background:rgba(248,113,113,.12); color:#f87171; border-color:rgba(248,113,113,.3); }
+.action-risk { margin-left:auto; padding:.2rem .45rem; border-radius:.4rem; font-size:.62rem; text-transform:uppercase; }
+.action-risk-low { background:rgba(134,239,172,.08); color:#86efac; }
+.action-risk-medium { background:rgba(251,191,36,.08); color:#fbbf24; }
+.action-risk-high { background:rgba(248,113,113,.08); color:#f87171; }
+
+/* Evidence — 7 states + 8 sources. */
+.evidence-state-observed { background:rgba(125,211,252,.1); color:#7dd3fc; }
+.evidence-state-inferred { background:rgba(196,181,253,.1); color:#c4b5fd; }
+.evidence-state-needed { background:rgba(251,191,36,.1); color:#fbbf24; }
+.evidence-state-verified { background:rgba(134,239,172,.12); color:#86efac; border-color:rgba(134,239,172,.3); }
+.evidence-state-contradicted { background:rgba(248,113,113,.1); color:#f87171; }
+.evidence-state-stale { background:rgba(148,163,184,.1); color:#94a3b8; }
+.evidence-state-rejected { background:rgba(251,113,133,.1); color:#fda4af; }
+.evidence-source-website { background:rgba(96,165,250,.1); color:#60a5fa; }
+.evidence-source-email { background:rgba(168,85,247,.1); color:#c4b5fd; }
+.evidence-source-social { background:rgba(236,72,153,.1); color:#f472b6; }
+.evidence-source-crm { background:rgba(20,184,166,.1); color:#2dd4bf; }
+.evidence-source-analytics { background:rgba(34,197,94,.1); color:#4ade80; }
+.evidence-source-payment { background:rgba(190,242,100,.12); color:#bef264; }
+.evidence-source-document { background:rgba(251,191,36,.1); color:#fbbf24; }
+.evidence-source-manual { background:rgba(148,163,184,.1); color:#94a3b8; }
+
+/* Experiments — 5 statuses + 5 decisions. */
+.experiment-status-draft { background:rgba(148,163,184,.1); color:#94a3b8; }
+.experiment-status-running { background:rgba(125,211,252,.12); color:#7dd3fc; border-color:rgba(125,211,252,.3); }
+.experiment-status-completed { background:rgba(134,239,172,.12); color:#86efac; border-color:rgba(134,239,172,.3); }
+.experiment-status-stopped { background:rgba(251,113,133,.1); color:#fda4af; }
+.experiment-status-blocked { background:rgba(251,191,36,.1); color:#fbbf24; }
+.experiment-decision-continue { background:rgba(134,239,172,.08); color:#86efac; }
+.experiment-decision-change { background:rgba(125,211,252,.08); color:#7dd3fc; }
+.experiment-decision-stop { background:rgba(251,113,133,.08); color:#fda4af; }
+.experiment-decision-blocked { background:rgba(251,191,36,.08); color:#fbbf24; }
+.experiment-decision-pending { background:rgba(148,163,184,.08); color:#94a3b8; }
+
+/* Connectors — 8 statuses. */
+.connector-status-setup_required { background:rgba(251,191,36,.1); color:#fbbf24; }
+.connector-status-authorized { background:rgba(125,211,252,.1); color:#7dd3fc; }
+.connector-status-connected { background:rgba(190,242,100,.1); color:#d9ff9f; }
+.connector-status-healthy { background:rgba(134,239,172,.12); color:#86efac; border-color:rgba(134,239,172,.3); }
+.connector-status-degraded { background:rgba(251,191,36,.1); color:#fbbf24; }
+.connector-status-disconnected { background:rgba(148,163,184,.1); color:#94a3b8; }
+.connector-status-revoked { background:rgba(251,113,133,.12); color:#fda4af; border-color:rgba(251,113,133,.3); }
+.connector-status-error { background:rgba(248,113,113,.12); color:#f87171; border-color:rgba(248,113,113,.3); }
+
+/* Audit — 10 categories + event list. */
+.audit-category-auth { background:rgba(125,211,252,.1); color:#7dd3fc; }
+.audit-category-role { background:rgba(196,181,253,.1); color:#c4b5fd; }
+.audit-category-approval { background:rgba(134,239,172,.1); color:#86efac; }
+.audit-category-connector { background:rgba(96,165,250,.1); color:#60a5fa; }
+.audit-category-action { background:rgba(190,242,100,.1); color:#d9ff9f; }
+.audit-category-payment { background:rgba(34,197,94,.1); color:#4ade80; }
+.audit-category-export { background:rgba(168,85,247,.1); color:#c4b5fd; }
+.audit-category-deletion { background:rgba(248,113,113,.12); color:#f87171; border-color:rgba(248,113,113,.3); }
+.audit-category-security { background:rgba(251,113,133,.12); color:#fda4af; border-color:rgba(251,113,133,.3); }
+.audit-category-config { background:rgba(148,163,184,.1); color:#94a3b8; }
+.audit-list { list-style:none; margin:1rem 0 0; padding:0; display:grid; gap:.5rem; }
+.audit-row { display:grid; grid-template-columns:auto 1fr; gap:.9rem; align-items:flex-start; border:1px solid rgba(255,255,255,.07); border-radius:.7rem; padding:.85rem; background:#0e1422; }
+.audit-row-body { display:flex; flex-direction:column; gap:.3rem; min-width:0; }
+.audit-row-body strong { font-size:.85rem; }
+.audit-row-body small { color:#64748b; font-size:.7rem; }
+.audit-detail { margin:.35rem 0 0; padding:.55rem; border:1px solid rgba(255,255,255,.06); border-radius:.5rem; background:#0a0f19; color:#7c8ca5; font-size:.7rem; line-height:1.5; overflow:auto; max-height:8rem; }
+.audit-meta { color:#475569; font-size:.66rem; }
+
+/* Agent runs — 4 statuses. */
+.agent-run-status-running { background:rgba(125,211,252,.12); color:#7dd3fc; border-color:rgba(125,211,252,.3); }
+.agent-run-status-completed { background:rgba(134,239,172,.12); color:#86efac; border-color:rgba(134,239,172,.3); }
+.agent-run-status-failed { background:rgba(248,113,113,.12); color:#f87171; border-color:rgba(248,113,113,.3); }
+.agent-run-status-cancelled { background:rgba(148,163,184,.1); color:#94a3b8; }
+
+/* Organizations — 4 role badges. */
+.org-role-owner { background:rgba(190,242,100,.15); color:#bef264; border-color:rgba(190,242,100,.35); }
+.org-role-admin { background:rgba(125,211,252,.12); color:#7dd3fc; border-color:rgba(125,211,252,.3); }
+.org-role-member { background:rgba(148,163,184,.1); color:#94a3b8; }
+.org-role-viewer { background:rgba(196,181,253,.1); color:#c4b5fd; }
+
+/* Content — 7 statuses (note: in_review uses underscore). */
+.content-status-draft { background:rgba(148,163,184,.1); color:#94a3b8; }
+.content-status-in_review { background:rgba(251,191,36,.1); color:#fbbf24; }
+.content-status-approved { background:rgba(190,242,100,.12); color:#d9ff9f; border-color:rgba(190,242,100,.3); }
+.content-status-scheduled { background:rgba(125,211,252,.1); color:#7dd3fc; }
+.content-status-published { background:rgba(134,239,172,.12); color:#86efac; border-color:rgba(134,239,172,.3); }
+.content-status-failed { background:rgba(248,113,113,.12); color:#f87171; border-color:rgba(248,113,113,.3); }
+.content-status-archived { background:rgba(148,163,184,.08); color:#64748b; }
+
+/* Contacts — 8 statuses. */
+.contact-status-new { background:rgba(125,211,252,.1); color:#7dd3fc; }
+.contact-status-qualified { background:rgba(190,242,100,.12); color:#d9ff9f; border-color:rgba(190,242,100,.3); }
+.contact-status-contacted { background:rgba(168,85,247,.1); color:#c4b5fd; }
+.contact-status-replied { background:rgba(34,197,94,.1); color:#4ade80; }
+.contact-status-meeting { background:rgba(251,191,36,.1); color:#fbbf24; }
+.contact-status-converted { background:rgba(134,239,172,.15); color:#86efac; border-color:rgba(134,239,172,.35); }
+.contact-status-rejected { background:rgba(251,113,133,.1); color:#fda4af; }
+.contact-status-unsubscribed { background:rgba(148,163,184,.1); color:#94a3b8; }
+
+/* Payment pills for the revenue panel. */
+.payment-status-pending { background:rgba(251,191,36,.1); color:#fbbf24; }
+.payment-status-succeeded { background:rgba(134,239,172,.15); color:#86efac; border-color:rgba(134,239,172,.3); }
+.payment-status-refunded { background:rgba(168,85,247,.1); color:#c4b5fd; }
+.payment-status-disputed { background:rgba(248,113,113,.12); color:#f87171; border-color:rgba(248,113,113,.3); }
+.payment-status-failed { background:rgba(251,113,133,.12); color:#fda4af; border-color:rgba(251,113,133,.3); }
+
+/* Revenue hero + attribution path (panel-local; does not collide with the
+   workspace-client revenue hero card). */
+.revenue-hero { display:flex; flex-direction:column; gap:.4rem; border:1px solid rgba(190,242,100,.18); border-radius:1rem; padding:1.5rem; margin-bottom:1rem; background:radial-gradient(circle at 80% 0%,rgba(190,242,100,.11),transparent 45%),#0b101a; }
+.revenue-hero>svg { width:1.8rem; color:#c4b5fd; }
+.revenue-hero small { color:#64748b; font-size:.7rem; text-transform:uppercase; letter-spacing:.05em; }
+.revenue-hero strong { font-size:3rem; line-height:1; }
+.revenue-hero .revenue-amount { color:#bef264; font-size:1.4rem; font-weight:800; }
+.revenue-hero p { color:#7c8ca5; font-size:.78rem; display:flex; align-items:center; gap:.4rem; }
+.revenue-hero p svg { width:.85rem; color:#86efac; }
+.agent-runs-hero { border-color:rgba(125,211,252,.2); background:radial-gradient(circle at 80% 0%,rgba(125,211,252,.11),transparent 45%),#0b101a; }
+.agent-runs-hero>svg { color:#7dd3fc; }
+.ws-attribution-path { border:1px solid rgba(255,255,255,.07); border-radius:.8rem; padding:1.2rem; margin-bottom:1rem; background:#0e1422; }
+.ws-attribution-path h3 { margin:0 0 .8rem; font-size:1rem; }
+.ws-attribution-path>div { display:grid; grid-template-columns:auto 1fr auto auto; align-items:center; gap:.7rem; border-top:1px solid rgba(255,255,255,.06); padding:.8rem 0; }
+.ws-attribution-path>div.reached { color:#cbd5e1; }
+.ws-attribution-path>div.reached em { color:#86efac; }
+.ws-attribution-path span { display:grid; width:1.7rem; height:1.7rem; place-items:center; border-radius:50%; background:#172033; color:#7dd3fc; font-size:.65rem; font-weight:700; }
+.ws-attribution-path strong { font-size:.82rem; }
+.ws-attribution-path em { color:#64748b; font-size:.66rem; font-style:normal; }
+.ws-attribution-path svg { width:.9rem; color:#475569; }
+
+/* Settings panel — three column grid + sections + budget meter. */
+.ws-settings-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:1rem; }
+.ws-settings-section { display:flex; flex-direction:column; gap:.7rem; border:1px solid rgba(255,255,255,.07); border-radius:.8rem; padding:1rem; background:#0e1422; min-width:0; }
+.ws-settings-section legend { display:flex; align-items:center; gap:.4rem; color:#bef264; font-size:.7rem; font-weight:800; letter-spacing:.08em; text-transform:uppercase; padding:0 .4rem; }
+.ws-settings-section legend svg { width:.85rem; }
+.ws-settings-section label { display:flex; flex-direction:column; gap:.25rem; font-size:.72rem; color:#7c8ca5; }
+.ws-settings-section label>span { display:flex; align-items:center; gap:.35rem; }
+.ws-settings-section input { height:2.2rem; }
+.ws-budget-meter small { color:#64748b; font-size:.66rem; }
+.ws-progress { display:block; height:.35rem; border-radius:.3rem; background:#192233; overflow:hidden; }
+.ws-progress i { display:block; height:100%; background:#bef264; }
+.ws-toggle { flex-direction:row !important; align-items:center; gap:.5rem; }
+.ws-toggle input { width:1rem; height:1rem; }
+.ws-toggle span { display:flex; align-items:center; gap:.35rem; color:#cbd5e1; font-size:.78rem; }
+.ws-settings-foot { grid-column:1/-1; display:flex; align-items:center; gap:.8rem; }
+.ws-saved { color:#86efac; font-size:.72rem; }
+
+/* Versions — vertical timeline. */
+.version-timeline { list-style:none; margin:0; padding:0; display:grid; gap:.6rem; }
+.version-timeline-item { display:grid; grid-template-columns:auto 1fr; gap:.9rem; align-items:flex-start; border:1px solid rgba(255,255,255,.07); border-radius:.8rem; padding:1rem; background:#0e1422; position:relative; }
+.version-timeline-item:before { content:""; position:absolute; left:1.45rem; top:100%; width:1px; height:.6rem; background:rgba(255,255,255,.08); }
+.version-timeline-item:last-child:before { display:none; }
+.version-marker { display:grid; width:2.2rem; height:2.2rem; place-items:center; border-radius:50%; background:#172033; color:#7dd3fc; }
+.version-marker svg { width:1rem; }
+.version-kind-strategy .version-marker { background:rgba(196,181,253,.1); color:#c4b5fd; }
+.version-body { display:flex; flex-direction:column; gap:.3rem; min-width:0; }
+.version-body header { display:flex; align-items:baseline; justify-content:space-between; gap:.6rem; }
+.version-body strong { font-size:.9rem; }
+.version-body em { color:#64748b; font-size:.7rem; font-style:normal; }
+.version-body p { margin:0; color:#cbd5e1; font-size:.8rem; line-height:1.5; }
+.version-body>small { color:#64748b; font-size:.72rem; }
+
+/* Responsive collapse for the new panels. */
+@media (max-width:1100px) { .ws-settings-grid { grid-template-columns:1fr 1fr; }.ws-cards { grid-template-columns:repeat(auto-fill,minmax(18rem,1fr)); } }
+@media (max-width:760px) { .ws-settings-grid { grid-template-columns:1fr; }.ws-form-row { flex-direction:column; align-items:stretch; }.ws-form-row>select,.ws-form-row>input,.ws-form-row>button { width:100%; }.ws-cards { grid-template-columns:1fr; }.ws-attribution-path>div { grid-template-columns:auto 1fr; }.ws-attribution-path>div>svg,.ws-attribution-path>div>em:last-of-type { grid-column:1/-1; } }
+
