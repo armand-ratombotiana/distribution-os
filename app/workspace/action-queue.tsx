@@ -15,6 +15,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 type ActionStatus =
   | "prepared"
@@ -44,7 +45,21 @@ type ActionSummary = {
 };
 
 type ActionsResponse = { actions?: ActionSummary[]; error?: string };
-type ActionResponse = { action?: ActionSummary; error?: string };
+type ActionDetail = ActionSummary & {
+  payload: Record<string, unknown> | null;
+  decided_by: string | null;
+  decided_at: number | null;
+};
+type ExecutionAttempt = {
+  status: "claimed" | "submitting" | "succeeded" | "failed" | "unknown";
+  attempt_count: number;
+  provider_request_id: string | null;
+  error_code: string | null;
+  error_message: string | null;
+  receipt: Record<string, unknown> | null;
+};
+type ActionResponse = { action?: ActionSummary; attempt?: ExecutionAttempt | null; error?: string };
+type ActionDetailResponse = { action?: ActionDetail; attempt?: ExecutionAttempt | null; error?: string };
 
 const statusLabel: Record<ActionStatus, string> = {
   prepared: "Prepared",
@@ -61,10 +76,12 @@ export function ActionQueue({ missionId }: { missionId: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [title, setTitle] = useState("");
-  const [summary, setSummary] = useState("");
-  const [channel, setChannel] = useState("email");
-  const [actionType, setActionType] = useState("send_message");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [subject, setSubject] = useState("");
+  const [text, setText] = useState("");
+  const [reviewed, setReviewed] = useState<Record<string, ActionDetailResponse>>({});
+  const [reviewing, setReviewing] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -104,7 +121,7 @@ export function ActionQueue({ missionId }: { missionId: string }) {
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!title.trim() || !summary.trim()) return;
+    if (!from.trim() || !to.trim() || !subject.trim() || !text.trim()) return;
     setSubmitting(true);
     setError("");
     try {
@@ -112,23 +129,47 @@ export function ActionQueue({ missionId }: { missionId: string }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action_type: actionType.trim(),
-          channel: channel.trim(),
-          title: title.trim(),
-          summary: summary.trim(),
+          action_type: "send_email",
+          channel: "email",
+          title: `Send email: ${subject.trim()}`,
+          summary: `Transactional email to ${to.trim()}`,
+          payload: {
+            provider: "resend",
+            from: from.trim(),
+            to: [to.trim()],
+            subject: subject.trim(),
+            text: text.trim(),
+            projected_cost_cents: 0,
+          },
         }),
       });
       const data = (await response.json()) as ActionResponse;
       if (!response.ok || !data.action) {
         throw new Error(data.error || "Action creation failed");
       }
-      setTitle("");
-      setSummary("");
+      setTo("");
+      setSubject("");
+      setText("");
       await reload();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Action creation failed");
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function review(actionId: string) {
+    setReviewing(actionId);
+    setError("");
+    try {
+      const response = await fetch(`/api/actions/${actionId}`);
+      const data = (await response.json()) as ActionDetailResponse;
+      if (!response.ok || !data.action) throw new Error(data.error || "Action detail failed");
+      setReviewed((current) => ({ ...current, [actionId]: data }));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Action detail failed");
+    } finally {
+      setReviewing(null);
     }
   }
 
@@ -146,10 +187,15 @@ export function ActionQueue({ missionId }: { missionId: string }) {
     try {
       const response = await fetch(`/api/actions/${actionId}/${endpoint}`, {
         method: "POST",
+        headers: status === "approved" ? { "Content-Type": "application/json" } : undefined,
+        body: status === "approved"
+          ? JSON.stringify({ payload_hash: reviewed[actionId]?.action?.payload_hash })
+          : undefined,
       });
       const data = (await response.json()) as ActionResponse;
       if (!response.ok) throw new Error(data.error || `Action ${endpoint} failed`);
       await reload();
+      await review(actionId);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Action transition failed");
     }
@@ -164,8 +210,8 @@ export function ActionQueue({ missionId }: { missionId: string }) {
           </p>
           <h2>Human-in-the-loop execution gate</h2>
           <p className="ws-panel-lede">
-            Every external action starts as <em>prepared</em>. Approve, reject or
-            execute — the queue retains the full state trail.
+            This slice sends one exact, approved transactional email through
+            Resend. Other channels remain fail-closed.
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={() => void reload()}>
@@ -175,39 +221,43 @@ export function ActionQueue({ missionId }: { missionId: string }) {
 
       <form className="ws-form" onSubmit={submit}>
         <Input
-          aria-label="Action title"
-          placeholder="Action title (e.g. Send first-touch email)"
-          value={title}
-          onChange={(event) => setTitle(event.target.value)}
+          aria-label="From address"
+          type="email"
+          placeholder="Configured Resend sender"
+          value={from}
+          onChange={(event) => setFrom(event.target.value)}
           required
         />
         <Input
-          aria-label="Action summary"
-          placeholder="Short summary of what the agent will do"
-          value={summary}
-          onChange={(event) => setSummary(event.target.value)}
+          aria-label="Recipient"
+          type="email"
+          placeholder="Sandbox allowlisted recipient"
+          value={to}
+          onChange={(event) => setTo(event.target.value)}
+          required
+        />
+        <Input
+          aria-label="Email subject"
+          placeholder="Exact subject"
+          value={subject}
+          onChange={(event) => setSubject(event.target.value)}
+          required
+        />
+        <Textarea
+          aria-label="Email body"
+          placeholder="Exact plain-text body"
+          value={text}
+          onChange={(event) => setText(event.target.value)}
           required
         />
         <div className="ws-form-row">
-          <Input
-            aria-label="Channel"
-            placeholder="channel"
-            value={channel}
-            onChange={(event) => setChannel(event.target.value)}
-          />
-          <Input
-            aria-label="Action type"
-            placeholder="action_type"
-            value={actionType}
-            onChange={(event) => setActionType(event.target.value)}
-          />
           <Button type="submit" disabled={submitting}>
             {submitting ? (
               <LoaderCircle className="animate-spin" />
             ) : (
               <Plus />
             )}
-            Queue action
+            Prepare exact email
           </Button>
         </div>
       </form>
@@ -239,6 +289,20 @@ export function ActionQueue({ missionId }: { missionId: string }) {
               <h3>{action.title}</h3>
               <p>{action.summary}</p>
               {action.blocker && <p className="ws-error"><CircleAlert /> {action.blocker}</p>}
+              {reviewed[action.id]?.action && (
+                <div className="action-payload-review">
+                  <strong>Immutable payload</strong>
+                  <pre>{JSON.stringify(reviewed[action.id].action!.payload, null, 2)}</pre>
+                  <small>SHA-256 {action.payload_hash}</small>
+                  {reviewed[action.id].attempt && (
+                    <p className="ws-meta">
+                      Attempt: {reviewed[action.id].attempt!.status} · {reviewed[action.id].attempt!.attempt_count} request(s)
+                      {reviewed[action.id].attempt!.provider_request_id ? ` · receipt ${reviewed[action.id].attempt!.provider_request_id}` : ""}
+                      {reviewed[action.id].attempt!.error_message ? ` · ${reviewed[action.id].attempt!.error_message}` : ""}
+                    </p>
+                  )}
+                </div>
+              )}
               <footer className="ws-card-foot">
                 <small>
                   <Clock /> Expires {new Date(action.expires_at).toLocaleString()}
@@ -251,8 +315,16 @@ export function ActionQueue({ missionId }: { missionId: string }) {
                 <Button
                   size="xs"
                   variant="outline"
+                  onClick={() => void review(action.id)}
+                  disabled={reviewing === action.id}
+                >
+                  {reviewing === action.id ? <LoaderCircle className="animate-spin" /> : <ShieldCheck />} Review exact payload
+                </Button>
+                <Button
+                  size="xs"
+                  variant="outline"
                   onClick={() => void transition(action.id, "approved")}
-                  disabled={action.status !== "prepared"}
+                  disabled={action.status !== "prepared" || !reviewed[action.id]?.action}
                 >
                   <Check /> Approve
                 </Button>
@@ -267,7 +339,7 @@ export function ActionQueue({ missionId }: { missionId: string }) {
                 <Button
                   size="xs"
                   onClick={() => void transition(action.id, "executed")}
-                  disabled={action.status !== "approved"}
+                  disabled={action.status !== "approved" || !reviewed[action.id]?.action}
                 >
                   <Play /> Execute
                 </Button>

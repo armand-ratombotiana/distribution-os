@@ -47,7 +47,11 @@ Three distinctions are non-negotiable:
 - Workspace initialization no longer claims legacy rows with a null workspace owner.
 - Mission event streams require identity and re-check workspace ownership while polling.
 - Connector setup requests cannot self-declare a connector connected.
-- Action execution fails closed with `501` until a real provider adapter supplies a verifiable receipt.
+- Approved `send_email` actions can execute through the real Resend HTTPS API only when the requested connector, server credential, exact tenant, exact sender, and recipient sandbox allowlist all match.
+- The Resend boundary re-checks the immutable payload hash, quiet hours, configured claims, budgets, and rolling 24-hour action limit before any network call.
+- Execution attempts are persisted before submission with a database-unique idempotency key; the same key is sent to Resend. Confirmed, definitive-failure, and ambiguous outcomes remain distinct.
+- Signed Resend webhooks are verified from their raw bodies, deduplicated by `svix-id`, and linked back to the provider request, action, mission, touchpoint, and evidence ledger. Only `email.delivered` becomes verified delivery evidence.
+- Every other outbound action type remains fail-closed with `501`.
 - Data-deletion audit events are created only after the deletion batch succeeds.
 
 ### Revenue truth
@@ -69,27 +73,17 @@ Three distinctions are non-negotiable:
 
 These are product gaps, not hidden successes:
 
-- No outbound provider adapter currently executes email, social, ad, or publishing actions. Approved actions remain approved and execution returns `501`.
+- The deployed adapter is disabled until an operator supplies a sending-only Resend key, webhook secret, exact workspace id, exact sender, and sandbox recipient allowlist. No credential is committed to this repository.
+- Resend is the only outbound adapter. Social, ad, CRM, batch email, HTML email, attachment, and publishing actions remain blocked.
 - The 15-agent registry is a conceptual scheduling model. Mission synthesis is currently one validated model request represented as one recorded synthesis run, not 15 independently executing agents.
 - There is no durable background job/lease runtime driving the lifecycle without a request.
 - Connector catalog entries and setup records are not OAuth installations and do not prove account health.
-- Action idempotency is checked in application code; the current database schema does not enforce a unique idempotency key under concurrency.
+- Action preparation deduplication is still checked in application code, but outbound execution now has a database-enforced unique idempotency key.
 - Mission graph creation uses compensation, not one D1 transaction spanning every artifact.
 - Stripe ingestion supports the selected event families, but full customer/touchpoint lineage, refund reconciliation to the original charge, and unit-economics reporting are incomplete.
 - The Versions workspace view does not yet load its canonical API.
-- Budget, quiet-hour, rate-limit, retention, brand-safety, and orchestration helpers exist, but not every control is wired into the outbound execution boundary because that boundary is still closed.
+- Delivery webhooks prove mail-server delivery, opens and clicks, but replies and conversion attribution still require a correlation design beyond the narrow adapter.
 
 ## Next best implementation wave
 
-Build one real, narrow distribution adapter end to end—preferably a transactional email sandbox or a single low-risk publishing provider. It must:
-
-1. consume one approved, unexpired action with its immutable payload hash;
-2. enforce connector authorization, budget, quiet-hour, rate-limit, and brand-safety policy at execution time;
-3. persist an execution attempt before the network call;
-4. use a database-enforced idempotency key;
-5. record the provider request identifier and receipt;
-6. transition to `executed` only on provider confirmation;
-7. ingest delivery/reply/conversion evidence and connect it to experiment and mission;
-8. expose retries and failures without manufacturing a positive outcome.
-
-After that vertical slice is proven, introduce durable jobs/leases and expand from one recorded synthesis run to independently observable agent decisions. Breadth should follow proof of the golden path, not precede it.
+Activate and prove the Resend sandbox with operator-supplied secrets, then add durable jobs/leases for retries and webhook reconciliation. After provider acceptance and signed delivery are observed in production, add reply correlation and conversion attribution to the originating experiment. Breadth should follow proof of that golden path, not precede it.

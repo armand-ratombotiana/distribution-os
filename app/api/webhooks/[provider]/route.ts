@@ -5,6 +5,12 @@ import {
   classifyWebhookEvent,
   verifyStripeSignature,
 } from "../../../../lib/webhook-signature-pure";
+import { hashPayload } from "../../../../db/actions";
+import { getRawDb } from "../../../../db/index";
+import {
+  resendEventState,
+  verifyAndParseResendWebhook,
+} from "../../../../lib/resend-webhook";
 
 type RouteContext = {
   params: Promise<{ provider: string }>;
@@ -27,6 +33,9 @@ type RouteContext = {
 export async function POST(request: Request, context: RouteContext) {
   try {
     const { provider } = await context.params;
+    if (provider.toLowerCase() === "resend") {
+      return handleResendWebhook(request);
+    }
     if (provider.toLowerCase() !== "stripe") {
       return Response.json({ error: "Unsupported webhook provider." }, { status: 404 });
     }
@@ -139,6 +148,66 @@ export async function POST(request: Request, context: RouteContext) {
       { status: 500 },
     );
   }
+}
+
+async function handleResendWebhook(request: Request): Promise<Response> {
+  const runtime = env as unknown as {
+    RESEND_WEBHOOK_SECRET?: string;
+    RESEND_WORKSPACE_ID?: string;
+  };
+  const secret = runtime.RESEND_WEBHOOK_SECRET?.trim();
+  const enabledWorkspaceId = runtime.RESEND_WORKSPACE_ID?.trim();
+  if (!secret || !enabledWorkspaceId) {
+    return Response.json({ error: "Resend webhook verification is not configured." }, { status: 503 });
+  }
+  const rawBody = await request.text();
+  const eventId = request.headers.get("svix-id")?.trim() ?? "";
+  const timestamp = request.headers.get("svix-timestamp")?.trim() ?? "";
+  const signature = request.headers.get("svix-signature")?.trim() ?? "";
+  if (!eventId || !timestamp || !signature) {
+    return Response.json({ error: "Missing Resend webhook signature headers." }, { status: 401 });
+  }
+
+  let event;
+  try {
+    event = verifyAndParseResendWebhook({ rawBody, secret, id: eventId, timestamp, signature });
+  } catch {
+    return Response.json({ error: "Invalid Resend webhook signature or payload." }, { status: 401 });
+  }
+
+  const db = getRawDb();
+  const existing = await db
+    .prepare("SELECT id FROM provider_webhook_events WHERE provider = 'resend' AND provider_event_id = ? LIMIT 1")
+    .bind(eventId)
+    .first<{ id: string }>();
+  if (existing) return Response.json({ received: true, duplicate: true });
+
+  const attempt = await db
+    .prepare("SELECT workspace_id, mission_id, action_id FROM action_execution_attempts WHERE provider = 'resend' AND provider_request_id = ? AND workspace_id = ? AND status = 'succeeded' LIMIT 1")
+    .bind(event.data.email_id, enabledWorkspaceId)
+    .first<{ workspace_id: string; mission_id: string; action_id: string }>();
+  if (!attempt) {
+    return Response.json({ received: true, matched: false }, { status: 202 });
+  }
+
+  const now = Date.now();
+  const occurredAt = Date.parse(event.created_at);
+  const payloadHash = await hashPayload(event);
+  const eventJson = JSON.stringify(event);
+  const state = resendEventState(event.type);
+  const title = `Resend ${event.type.replace("email.", "")}`;
+  const eventRowId = `pwe_${crypto.randomUUID()}`;
+  await db.batch([
+    db.prepare("INSERT OR IGNORE INTO touchpoints (id, workspace_id, mission_id, action_id, experiment_id, channel, event_type, occurred_at, received_at, provider_event_id, raw_event_json, created_at) SELECT ?, ?, ?, ?, NULL, 'email', ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM provider_webhook_events WHERE provider = 'resend' AND provider_event_id = ?)").bind(`tp_${eventId}`, attempt.workspace_id, attempt.mission_id, attempt.action_id, event.type, occurredAt, now, eventId, eventJson, now, eventId),
+    db.prepare("INSERT OR IGNORE INTO evidence (id, workspace_id, mission_id, source_url, source_type, content_hash, parser_version, title, summary, extracted_facts_json, provenance_json, state, contradiction_of_id, created_at, updated_at) SELECT ?, ?, ?, NULL, 'provider_webhook', ?, '1.0', ?, ?, ?, ?, ?, NULL, ?, ? WHERE NOT EXISTS (SELECT 1 FROM provider_webhook_events WHERE provider = 'resend' AND provider_event_id = ?)").bind(`ev_${eventId}`, attempt.workspace_id, attempt.mission_id, payloadHash, title, `Signed Resend event ${event.type} for the submitted email.`, JSON.stringify({ provider_request_id: event.data.email_id, event_type: event.type, occurred_at: event.created_at }), JSON.stringify({ provider: "resend", svix_id: eventId, action_id: attempt.action_id }), state, now, now, eventId),
+    db.prepare("INSERT INTO mission_events (mission_id, event_type, title, detail, actor, created_at) SELECT ?, 'measurement', ?, ?, 'Resend webhook', ? WHERE NOT EXISTS (SELECT 1 FROM provider_webhook_events WHERE provider = 'resend' AND provider_event_id = ?)").bind(attempt.mission_id, title, `Signed provider event ${event.type}; provider request ${event.data.email_id}.`, now, eventId),
+    db.prepare("INSERT INTO provider_webhook_events (id, workspace_id, action_id, provider, provider_event_id, provider_request_id, event_type, payload_hash, occurred_at, received_at, created_at) VALUES (?, ?, ?, 'resend', ?, ?, ?, ?, ?, ?, ?)").bind(eventRowId, attempt.workspace_id, attempt.action_id, eventId, event.data.email_id, event.type, payloadHash, occurredAt, now, now),
+  ]);
+
+  if (["email.bounced", "email.failed", "email.complained", "email.suppressed"].includes(event.type)) {
+    await db.prepare("UPDATE connector_installations SET status = CASE WHEN status IN ('healthy','connected') THEN 'degraded' ELSE status END, last_error = ?, health_checked_at = ?, updated_at = ? WHERE workspace_id = ? AND provider = 'Resend'").bind(`Signed provider event: ${event.type}`, now, now, attempt.workspace_id).run();
+  }
+  return Response.json({ received: true, matched: true, event_type: event.type });
 }
 
 function readMetadataValue(payload: Record<string, unknown>, key: string): string | null {

@@ -23,7 +23,7 @@ next iteration.
 1. [High-level diagram](#high-level-diagram)
 2. [Runtime stack](#runtime-stack)
 3. [Request lifecycle](#request-lifecycle)
-4. [Data model — 16 logical tables (21 physical)](#data-model)
+4. [Data model — 16 logical groups (23 physical tables)](#data-model)
 5. [API surface — 28+ endpoints](#api-surface)
 6. [Workspace UI — 12 panels](#workspace-ui)
 7. [Pure business-logic modules — 31+ modules](#pure-modules)
@@ -73,7 +73,7 @@ next iteration.
                                  ▼
                 ┌──────────────────────────────────────────────────┐
                 │   Cloudflare D1 (SQLite)                          │
-                │   21 tables across 16 logical groups              │
+                │   23 tables across 16 logical groups              │
                 │   • workspaces, missions, evidence, payments,     │
                 │     experiments, actions, contacts, content,      │
                 │     connectors, agents, audit, organizations      │
@@ -156,7 +156,7 @@ POST /api/mission
 ## Data model
 
 The D1 schema lives in `db/schema.ts` and is migrated with Drizzle Kit
-(`npm run db:generate`). There are 21 physical tables grouped into 16
+(`npm run db:generate`). There are 23 physical tables grouped into 16
 logical domains:
 
 ```
@@ -512,7 +512,7 @@ end-to-end:
 | Right                       | Endpoint                  | Behaviour                                        |
 | --------------------------- | ------------------------- | ------------------------------------------------ |
 | Right of access (Art. 15)   | `POST /api/data-export`   | Returns JSON download of every tenant-scoped table for the caller, with `ip_hash`, `token_reference`, `token_hash` redacted. |
-| Right to erasure (Art. 17)  | `POST /api/data-deletion` | Wipes 16 tenant tables in FK-safe order. Audit row written BEFORE the cascade so the deletion intent is durable. The `workspaces` row is preserved so the user can still sign in. |
+| Right to erasure (Art. 17)  | `POST /api/data-deletion` | Wipes tenant tables in an FK-safe batch, then records success. The `workspaces` and audit rows are preserved. |
 | Data minimisation (Art. 5)  | `workspace_settings.retention_days` | Default 365 days; sweep job (roadmap) will purge evidence / events older than the retention window. |
 
 ```jsonc
@@ -527,10 +527,9 @@ end-to-end:
 ```
 
 The audit row (`event_category = "deletion"`,
-`event_type = "workspace.data_deleted"`) is inserted **before** the
-cascade, so even though `audit_events` is itself workspace-scoped via
-`ON DELETE CASCADE`, the deletion-intent record survives long enough to
-be replicated / exported by the compliance pipeline.
+`event_type = "workspace.data_deleted"`) is inserted **after** the FK-safe
+batch succeeds. The workspace is preserved, so the completed-operation row
+remains queryable without claiming success for a failed deletion.
 
 ---
 

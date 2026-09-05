@@ -8,6 +8,7 @@ import {
   type ActionRisk,
 } from "../../../../../db/actions";
 import { logAuditEvent } from "../../../../../db/audit";
+import { resendEmailPayloadSchema } from "../../../../../lib/resend-email";
 
 const createActionSchema = z.object({
   action_type: z.string().trim().min(1).max(80),
@@ -33,6 +34,16 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     const input = createActionSchema.parse(await request.json());
+    if (input.action_type === "send_email" && input.channel === "email") {
+      const payload = resendEmailPayloadSchema.safeParse(input.payload);
+      if (!payload.success) {
+        return Response.json(
+          { error: "Email actions require one exact Resend from/to/subject/text payload." },
+          { status: 422 },
+        );
+      }
+      input.payload = payload.data;
+    }
     const now = Date.now();
     const expiresAt = now + (input.expires_in_seconds ?? 60 * 60 * 24 * 7) * 1000;
     const action = await enqueueAction(workspace.id, {

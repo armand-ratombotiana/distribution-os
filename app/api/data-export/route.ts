@@ -42,6 +42,8 @@ export async function POST(request: Request) {
       evidenceResult,
       contactsResult,
       actionsResult,
+      actionExecutionAttemptsResult,
+      providerWebhookEventsResult,
       paymentsResult,
       touchpointsResult,
       agentRunsResult,
@@ -108,6 +110,14 @@ export async function POST(request: Request) {
         .bind(workspaceId)
         .all(),
       db
+        .prepare("SELECT * FROM action_execution_attempts WHERE workspace_id = ? ORDER BY created_at DESC")
+        .bind(workspaceId)
+        .all(),
+      db
+        .prepare("SELECT * FROM provider_webhook_events WHERE workspace_id = ? ORDER BY received_at DESC")
+        .bind(workspaceId)
+        .all(),
+      db
         .prepare("SELECT * FROM payments WHERE workspace_id = ? ORDER BY created_at DESC")
         .bind(workspaceId)
         .all(),
@@ -164,7 +174,7 @@ export async function POST(request: Request) {
     const payload = {
       workspace_id: workspaceId,
       exported_at: exportedAt,
-      schema_version: 1,
+      schema_version: 2,
       tables: {
         workspaces: workspacesResult.results,
         workspace_connections: connectionsResult.results,
@@ -177,6 +187,8 @@ export async function POST(request: Request) {
         evidence: evidenceResult.results,
         contacts: contactsResult.results,
         action_queue: actionsResult.results,
+        action_execution_attempts: actionExecutionAttemptsResult.results,
+        provider_webhook_events: providerWebhookEventsResult.results,
         payments: paymentsResult.results,
         touchpoints: touchpointsResult.results,
         agent_runs: agentRunsResult.results,

@@ -20,7 +20,8 @@ The current implementation is a hardened first slice, not a claim that the full 
 3. OpenAI synthesis is used when configured; otherwise the same contract is populated in explicit simulation mode. Both paths are schema-validated.
 4. The server creates a mission plus website evidence, inferred assumptions, experiments, content drafts, a prepared action, versions, lifecycle events, and run telemetry. A failed artifact write is compensated by deleting the new mission graph.
 5. The lifecycle follows `observe → decide → approve → act → measure → learn`. Server-side readiness checks prevent skipping exact-action approval, provider-confirmed execution, or measurement evidence.
-6. Signed Stripe events with valid workspace metadata record attributable payments and update the mission’s verified-payment counter.
+6. One exact approved plain-text email can be submitted through a tenant-bound Resend sandbox; the attempt, idempotency key, provider receipt, touchpoint, and evidence are durable.
+7. Signed Resend delivery events prove delivery separately from API acceptance. Signed Stripe events with valid workspace metadata record attributable payments and update the mission’s verified-payment counter.
 
 No outbound distribution adapter is currently connected. The execute endpoint deliberately returns `501` and preserves the approved action instead of manufacturing success.
 
@@ -57,6 +58,11 @@ Authenticated routes require the hosting identity headers. A local request witho
 | `OPENAI_API_KEY` | no | Enables live mission synthesis; omission is labelled simulation |
 | `OPENAI_MODEL` | no | Overrides the configured Responses API model |
 | `STRIPE_WEBHOOK_SECRET` | for Stripe ingestion | Verifies signed Stripe webhook payloads |
+| `RESEND_API_KEY` | for email execution | Sending-only Resend credential; never sent to the browser |
+| `RESEND_WEBHOOK_SECRET` | for delivery evidence | Verifies raw signed Resend webhook payloads |
+| `RESEND_WORKSPACE_ID` | for email execution | Restricts the site-level credential to one exact workspace |
+| `RESEND_FROM_EMAIL` | for email execution | Exact sender that an approved payload must match |
+| `RESEND_ALLOWED_RECIPIENTS` | for email execution | Comma-separated sandbox allowlist; empty blocks every recipient |
 
 Connector records are setup declarations only. Their status cannot be promoted to connected by a client request.
 

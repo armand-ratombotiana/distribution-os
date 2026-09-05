@@ -254,12 +254,7 @@ missing field) yields `400`.
 1. Identity is captured via `requireRequestIdentity`.
 2. Workspace is loaded (and created on first access if necessary) with
    `ensureWorkspace`.
-3. An `audit_events` row with `event_category = "deletion"`,
-   `event_type = "workspace.data_deleted"` is written **before** any
-   deletion. Because `audit_events` is itself workspace-scoped via a
-   cascading FK, recording the event first guarantees that the deletion
-   intent is durable even if the cascade removes everything else.
-4. The following tables are cleared in FK-safe order (children first):
+3. The following tables are cleared in an FK-safe batch (children first):
    - `agent_steps`
    - `agent_runs`
    - `mission_events`
@@ -270,12 +265,17 @@ missing field) yields `400`.
    - `touchpoints`
    - `content_assets`
    - `experiments`
+   - `provider_webhook_events`
+   - `action_execution_attempts`
    - `action_queue`
    - `contacts`
    - `workspace_settings`
    - `workspace_connections`
    - `connector_installations`
    - `missions`
+4. An `audit_events` row with `event_category = "deletion"` and
+   `event_type = "workspace.data_deleted"` is written only after that batch
+   succeeds, so the audit trail never reports a failed deletion as complete.
 5. The `workspaces` row itself is preserved so the user can still sign in
    afterward; deletion is intended to wipe mission/connector/evidence
    state, not the account.

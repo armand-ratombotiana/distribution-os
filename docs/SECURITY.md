@@ -559,8 +559,9 @@ buildIdempotencyKey(workspaceId, missionId, payloadHash)
 
 `payloadHash` is `SHA-256(canonicalJson(payload))` where
 `canonicalJson` recursively sorts object keys, drops `undefined`, and
-preserves array order. The `action_queue` table has a unique index on
-`idempotency_key`, so a second INSERT with the same key is rejected.
+preserves array order. Preparation deduplicates in application code. External
+execution is separately protected by the database-unique
+`action_execution_attempts.idempotency_key` and the same provider key.
 
 ### 2. Webhook / payment idempotency (`lib/idempotency-pure.ts`)
 
@@ -609,7 +610,7 @@ deadline.
 | Right                       | Endpoint                  | Behaviour                                        |
 | --------------------------- | ------------------------- | ------------------------------------------------ |
 | Right of access (Art. 15)   | `POST /api/data-export`   | Returns JSON download of every tenant-scoped table for the caller, with all PII / tokens / IP hashes redacted. |
-| Right to erasure (Art. 17)  | `POST /api/data-deletion` | Wipes 16 tenant tables in FK-safe order. Audit row written BEFORE the cascade so the deletion intent is durable. The `workspaces` row is preserved so the user can still sign in. |
+| Right to erasure (Art. 17)  | `POST /api/data-deletion` | Wipes tenant tables in an FK-safe batch, then records the completed operation. The `workspaces` row is preserved. |
 | Data minimisation (Art. 5)  | `workspace_settings.retention_days` | Default 365 days; sweep job (roadmap) will purge evidence / events older than the retention window. |
 
 ### FK-safe deletion order
@@ -668,6 +669,9 @@ visible responses.
 | `OPENAI_API_KEY`        | Workers secret / `.dev.vars` (gitignored)        | `POST /api/mission` (live mode)               |
 | `OPENAI_MODEL`          | Workers var / `.dev.vars`                        | Override Responses API model (default `gpt-5.6`) |
 | `STRIPE_WEBHOOK_SECRET` | Workers secret / `.dev.vars`                     | `POST /api/webhooks/[provider]`               |
+| `RESEND_API_KEY` | Workers secret / `.dev.vars` | Resend email execution only |
+| `RESEND_WEBHOOK_SECRET` | Workers secret / `.dev.vars` | Signed Resend delivery events |
+| `RESEND_WORKSPACE_ID`, `RESEND_FROM_EMAIL`, `RESEND_ALLOWED_RECIPIENTS` | Workers vars / `.dev.vars` | Tenant, sender and sandbox-recipient constraints |
 | `DB`                    | Cloudflare D1 binding (`wrangler.toml`)          | All D1 access via `getDb()` / `getRawDb()`    |
 
 - `.env.example` is the canonical list (no real values).

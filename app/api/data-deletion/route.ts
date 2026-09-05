@@ -25,6 +25,8 @@ const DELETION_TABLES = [
   "touchpoints",
   "content_assets",
   "experiments",
+  "provider_webhook_events",
+  "action_execution_attempts",
   "action_queue",
   "contacts",
   "workspace_settings",
