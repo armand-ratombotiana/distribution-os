@@ -6,13 +6,16 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "install:ci": "bash scripts/install-ci.sh",
-    "dev": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vite",
-    "build": "bash scripts/build-verified.sh",
-    "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
-    "test": "npm run build && node --test tests/*.test.mjs",
-    "lint": "bash scripts/sites-env.sh -- eslint . --ignore-pattern dist --ignore-pattern .next",
-    "db:generate": "bash scripts/sites-env.sh -- drizzle-kit generate"
+    "install:ci": "npm ci",
+    "install:ci:sites": "bash scripts/install-ci.sh",
+    "dev": "node scripts/sites-command.mjs dev",
+    "build": "node scripts/sites-command.mjs build",
+    "start": "node scripts/sites-command.mjs start",
+    "test": "npm run build && node scripts/test.mjs",
+    "typecheck": "node node_modules/typescript/bin/tsc --noEmit",
+    "lint": "node scripts/sites-command.mjs lint",
+    "verify": "npm run typecheck && npm run lint && npm test",
+    "db:generate": "node scripts/sites-command.mjs db:generate"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
@@ -26,7 +29,7 @@
     "embla-carousel-react": "^8.6.0",
     "input-otp": "^1.4.2",
     "lucide-react": "^1.31.0",
-    "next": "16.2.6",
+    "next": "^16.3.4",
     "next-themes": "^0.4.6",
     "radix-ui": "^1.6.7",
     "react": "19.2.6",

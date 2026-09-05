@@ -1,7 +1,7 @@
 import { EVIDENCE_STATES, EVIDENCE_SOURCE_TYPES } from "./schema";
 
-type EvidenceState = (typeof EVIDENCE_STATES)[number];
-type EvidenceSourceType = (typeof EVIDENCE_SOURCE_TYPES)[number];
+export type EvidenceState = (typeof EVIDENCE_STATES)[number];
+export type EvidenceSourceType = (typeof EVIDENCE_SOURCE_TYPES)[number];
 
 export type EvidenceRow = {
   id: string;

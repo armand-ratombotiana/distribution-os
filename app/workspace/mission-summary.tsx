@@ -22,21 +22,17 @@ export type MissionSummarySnapshot = {
   current_stage?: string;
   cycle_number?: number;
   approved?: boolean;
-  counts?: {
-    actions?: number;
-    evidence?: number;
-    experiments?: number;
-    payments?: number;
-    versions?: number;
-  };
-  readiness?: {
-    can_advance?: boolean;
-    requires_approval?: boolean;
-    blocking_reasons?: string[];
-    readiness_score?: number;
-  };
+  action_count?: number;
+  evidence_count?: number;
+  experiment_count?: number;
+  payment_count?: number;
+  can_advance?: boolean;
+  blocking_reasons?: string[];
+  readiness_score?: number;
   error?: string;
 };
+
+type MissionSummaryResponse = { summary?: MissionSummarySnapshot; error?: string };
 
 export type MissionSummaryProps = {
   missionId: string;
@@ -44,12 +40,13 @@ export type MissionSummaryProps = {
   refreshKey?: number;
 };
 
-const STAGE_ORDER = ["observe", "decide", "act", "measure", "learn"] as const;
+const STAGE_ORDER = ["observe", "decide", "approve", "act", "measure", "learn"] as const;
 type Stage = (typeof STAGE_ORDER)[number];
 
 const stageLabel: Record<Stage, string> = {
   observe: "Observe",
   decide: "Decide",
+  approve: "Approve",
   act: "Act",
   measure: "Measure",
   learn: "Learn",
@@ -77,10 +74,10 @@ export function MissionSummary({ missionId, refreshKey }: MissionSummaryProps) {
       setError("");
       try {
         const response = await fetch(`/api/missions/${missionId}/summary`);
-        const data = (await response.json()) as MissionSummarySnapshot;
+        const data = (await response.json()) as MissionSummaryResponse;
         if (cancelled) return;
         if (response.ok) {
-          setSnapshot(data);
+          setSnapshot(data.summary ?? null);
         } else {
           setError(data.error || "Mission summary unavailable");
         }
@@ -99,8 +96,8 @@ export function MissionSummary({ missionId, refreshKey }: MissionSummaryProps) {
   async function reload(): Promise<void> {
     try {
       const response = await fetch(`/api/missions/${missionId}/summary`);
-      const data = (await response.json()) as MissionSummarySnapshot;
-      if (response.ok) setSnapshot(data);
+      const data = (await response.json()) as MissionSummaryResponse;
+      if (response.ok) setSnapshot(data.summary ?? null);
     } catch {
       // background reloads are non-fatal
     }
@@ -157,12 +154,16 @@ export function MissionSummary({ missionId, refreshKey }: MissionSummaryProps) {
   const stageIndex = STAGE_ORDER.indexOf(stage);
   const cycle = snapshot?.cycle_number ?? 0;
   const approved = Boolean(snapshot?.approved);
-  const counts = snapshot?.counts ?? {};
-  const readiness = snapshot?.readiness ?? {};
-  const readinessScore = Number.isFinite(readiness.readiness_score)
-    ? Math.max(0, Math.min(100, Math.round(readiness.readiness_score as number)))
+  const counts = {
+    actions: snapshot?.action_count ?? 0,
+    evidence: snapshot?.evidence_count ?? 0,
+    experiments: snapshot?.experiment_count ?? 0,
+    payments: snapshot?.payment_count ?? 0,
+  };
+  const readinessScore = Number.isFinite(snapshot?.readiness_score)
+    ? Math.max(0, Math.min(100, Math.round(snapshot?.readiness_score as number)))
     : 0;
-  const blockingReasons = readiness.blocking_reasons ?? [];
+  const blockingReasons = snapshot?.blocking_reasons ?? [];
 
   return (
     <section className="mission-summary ws-panel" aria-live="polite">
@@ -180,7 +181,7 @@ export function MissionSummary({ missionId, refreshKey }: MissionSummaryProps) {
           </h2>
           <p className="ws-panel-lede">
             One glance at the operating loop: where the mission is in its
-            five-stage cycle, what is queued and how ready it is to advance.
+            six-stage cycle, what is queued and how ready it is to advance.
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={() => void reload()}>
@@ -265,8 +266,8 @@ export function MissionSummary({ missionId, refreshKey }: MissionSummaryProps) {
             <small>Readiness</small>
             <strong>{readinessScore}% ready</strong>
           </div>
-          <span className={`mission-readiness-pill ${readiness.can_advance ? "ready" : "blocked"}`}>
-            {readiness.can_advance ? "Ready to advance" : "Blocked"}
+          <span className={`mission-readiness-pill ${snapshot?.can_advance ? "ready" : "blocked"}`}>
+            {snapshot?.can_advance ? "Ready to advance" : "Blocked"}
           </span>
         </header>
         <Progress value={readinessScore} />

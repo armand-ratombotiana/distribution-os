@@ -8,7 +8,6 @@ import {
   shouldNotify,
   type Notification,
   type NotificationContext,
-  type NotificationPreferences,
 } from "../lib/notification-pure.ts";
 
 const NOW = 1_700_000_000_000;

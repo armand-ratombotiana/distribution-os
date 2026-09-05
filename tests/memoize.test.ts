@@ -125,6 +125,6 @@ test("memoize invalidates when TTL elapses between calls", () => {
   cache = fn(cache, [1], NOW + 500).cache;
   assert.equal(calls, 1);
   // Past TTL → recompute.
-  cache = fn(cache, [1], NOW + 1000).cache;
+  fn(cache, [1], NOW + 1000);
   assert.equal(calls, 2);
 });

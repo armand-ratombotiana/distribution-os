@@ -16,7 +16,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 type WorkspaceSettingsRow = {
-  id: string;
   workspace_id: string;
   monthly_budget_cents: number;
   monthly_spent_cents: number;
@@ -26,30 +25,19 @@ type WorkspaceSettingsRow = {
   quiet_hours_start: number;
   quiet_hours_end: number;
   timezone: string;
-  forbidden_claims_json: string;
+  forbidden_claims_count: number;
   retention_days: number;
-  auto_approve_low_risk: number;
+  auto_approve_low_risk: boolean;
   max_daily_actions: number;
   updated_at: number;
 };
 
 type SettingsResponse = { settings?: WorkspaceSettingsRow; error?: string };
+type ClaimsResponse = { claims?: string[]; error?: string };
 type SettingsMutationResponse = {
   settings?: WorkspaceSettingsRow;
   error?: string;
 };
-
-function parseClaims(raw: string): string[] {
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (Array.isArray(parsed)) {
-      return parsed.filter((item): item is string => typeof item === "string");
-    }
-  } catch {
-    // fallthrough returns empty list
-  }
-  return [];
-}
 
 export function SettingsPanel({ workspaceId }: { workspaceId: string }) {
   const [settings, setSettings] = useState<WorkspaceSettingsRow | null>(null);
@@ -75,15 +63,18 @@ export function SettingsPanel({ workspaceId }: { workspaceId: string }) {
       setLoading(true);
       setError("");
       try {
-        const response = await fetch(
-          `/api/workspace/settings?workspace_id=${encodeURIComponent(workspaceId)}`,
-        );
+        const [response, claimsResponse] = await Promise.all([
+          fetch(`/api/workspace/settings?workspace_id=${encodeURIComponent(workspaceId)}`),
+          fetch("/api/workspace/forbidden-claims"),
+        ]);
         const data = (await response.json()) as SettingsResponse;
+        const claimsData = (await claimsResponse.json()) as ClaimsResponse;
         if (cancelled) return;
-        if (response.ok && data.settings) {
+        if (response.ok && claimsResponse.ok && data.settings) {
           hydrate(data.settings);
+          setForbiddenClaims((claimsData.claims || []).join("\n"));
         } else {
-          setError(data.error || "Failed to load settings");
+          setError(data.error || claimsData.error || "Failed to load settings");
         }
       } catch {
         if (!cancelled) setError("Network error while loading settings");
@@ -105,10 +96,9 @@ export function SettingsPanel({ workspaceId }: { workspaceId: string }) {
     setQuietStart(row.quiet_hours_start);
     setQuietEnd(row.quiet_hours_end);
     setTimezone(row.timezone);
-    setForbiddenClaims(parseClaims(row.forbidden_claims_json).join("\n"));
     setRetention(row.retention_days);
     setMaxDailyActions(row.max_daily_actions);
-    setAutoApprove(row.auto_approve_low_risk === 1);
+    setAutoApprove(row.auto_approve_low_risk);
   }
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {

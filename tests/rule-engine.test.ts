@@ -8,7 +8,6 @@ import {
   evaluateMatchingRules,
   evaluateRules,
   makeRule,
-  type Rule,
   type RuleResult,
 } from "../lib/rule-engine-pure.ts";
 
@@ -186,7 +185,7 @@ test("rules compose a realistic account-withdrawal gate", () => {
     makeRule<AccountFacts>("frozen-account", (c) => c.isFrozen, {
       priority: 100,
       severity: "critical",
-      action: (c) => ({ block: true, reason: `account frozen` }),
+      action: () => ({ block: true, reason: `account frozen` }),
     }),
   );
   engine = addRule(

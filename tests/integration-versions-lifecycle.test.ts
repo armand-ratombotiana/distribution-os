@@ -71,15 +71,15 @@ const baseMission = {
   approved: false,
 };
 
-test("nextVersionNumber returns 1 for null input AND STAGE_ORDER has 5 stages", () => {
+test("nextVersionNumber returns 1 for null input AND STAGE_ORDER has 6 stages", () => {
   assert.equal(nextVersionNumber(null), 1);
   assert.equal(nextVersionNumber(undefined), 1);
   assert.equal(nextVersionNumber(0), 1);
   assert.equal(nextVersionNumber(NaN), 1);
   assert.equal(nextVersionNumber(5), 6);
 
-  assert.equal(STAGE_ORDER.length, 5);
-  assert.deepEqual([...STAGE_ORDER], ["observe", "decide", "act", "measure", "learn"]);
+  assert.equal(STAGE_ORDER.length, 6);
+  assert.deepEqual([...STAGE_ORDER], ["observe", "decide", "approve", "act", "measure", "learn"]);
 });
 
 test("validateChangeReason accepts valid reason AND getStageDescription returns non-empty description", () => {
@@ -113,19 +113,20 @@ test("summarizeVersionForDisplay includes is_initial flag AND getNextStage retur
   assert.equal(later.version_number, 5);
 
   assert.equal(getNextStage("observe"), "decide");
-  assert.equal(getNextStage("decide"), "act");
+  assert.equal(getNextStage("decide"), "approve");
+  assert.equal(getNextStage("approve"), "act");
   assert.equal(getNextStage("act"), "measure");
   assert.equal(getNextStage("measure"), "learn");
   assert.equal(getNextStage("learn"), "observe");
 });
 
-test("isConfidenceChangeSignificant uses default 10-point threshold AND getMissionReadiness blocks unapproved act stage", () => {
+test("isConfidenceChangeSignificant uses default 10-point threshold AND getMissionReadiness blocks unapproved approve stage", () => {
   assert.equal(isConfidenceChangeSignificant(50, 65), true); // delta 15 >= 10
   assert.equal(isConfidenceChangeSignificant(50, 58), false); // delta 8 < 10
   assert.equal(isConfidenceChangeSignificant(60, 50), true); // absolute 10
 
   const readiness = getMissionReadiness({
-    current_stage: "act",
+    current_stage: "approve",
     cycle_number: 1,
     payment_count: 0,
     approved: false,
@@ -141,7 +142,8 @@ test("nextVersionNumber returns N+1 for valid input AND STAGE_TRANSITIONS maps e
   assert.equal(nextVersionNumber(42.9), 43);
 
   assert.equal(STAGE_TRANSITIONS.observe, "decide");
-  assert.equal(STAGE_TRANSITIONS.decide, "act");
+  assert.equal(STAGE_TRANSITIONS.decide, "approve");
+  assert.equal(STAGE_TRANSITIONS.approve, "act");
   assert.equal(STAGE_TRANSITIONS.act, "measure");
   assert.equal(STAGE_TRANSITIONS.measure, "learn");
   assert.equal(STAGE_TRANSITIONS.learn, "observe");
@@ -158,7 +160,7 @@ test("diffVersions reports no changes for identical JSON AND shouldIncrementCycl
   assert.equal(shouldIncrementCycle("learn", "act"), false);
 });
 
-test("validateChangeReason rejects too-short input AND isStageCompleteable gates act stage on approval", () => {
+test("validateChangeReason rejects too-short input AND isStageCompleteable gates approve stage on approval", () => {
   assert.equal(validateChangeReason("ab").valid, false);
   assert.equal(validateChangeReason("").valid, false);
   assert.equal(validateChangeReason(null).valid, false);
@@ -166,14 +168,14 @@ test("validateChangeReason rejects too-short input AND isStageCompleteable gates
   assert.equal(validateChangeReason("   ").valid, false);
 
   const unapproved = {
-    current_stage: "act",
+    current_stage: "approve",
     cycle_number: 1,
     payment_count: 0,
     approved: false,
   };
-  assert.equal(isStageCompleteable("act", unapproved), false);
+  assert.equal(isStageCompleteable("approve", unapproved), false);
   const approved = { ...unapproved, approved: true };
-  assert.equal(isStageCompleteable("act", approved), true);
+  assert.equal(isStageCompleteable("approve", approved), true);
 });
 
 test("buildVersionId prefixes 'mission_version'/'strategy_version' AND getMissionProgress returns 100 when payment_count > 0", () => {
@@ -207,7 +209,7 @@ test("summarizeStrategyVersionForDisplay includes confidence_band AND getMission
   assert.equal(low.confidence_band, "low");
 
   const readiness = getMissionReadiness({
-    current_stage: "act",
+    current_stage: "approve",
     cycle_number: 1,
     payment_count: 0,
     approved: false,
@@ -217,20 +219,20 @@ test("summarizeStrategyVersionForDisplay includes confidence_band AND getMission
   assert.equal(readiness.readiness_score, Math.max(0, 100 - 25 * readiness.blocking_reasons.length));
 });
 
-test("diffVersions detects removed fields AND shouldAutoAdvance is false when act stage is not approved", () => {
+test("diffVersions detects removed fields AND shouldAutoAdvance requires exact approval", () => {
   const diff = diffVersions('{"a":1,"b":2}', '{"a":1}');
   assert.deepEqual(diff.removed, ["b"]);
   assert.equal(diff.has_changes, true);
 
   const unapproved = {
-    current_stage: "act",
+    current_stage: "approve",
     cycle_number: 1,
     payment_count: 0,
     approved: false,
   };
   assert.equal(shouldAutoAdvance(unapproved, {}), false);
   const approved = { ...unapproved, approved: true };
-  assert.equal(shouldAutoAdvance(approved, {}), true);
+  assert.equal(shouldAutoAdvance(approved, { approvedActions: 1 }), true);
 });
 
 test("nextVersionNumber handles NaN/0/-5 by returning 1 AND isConfidenceChangeSignificant respects custom threshold", () => {
@@ -265,7 +267,7 @@ test("summarizeVersionForDisplay includes mission_field_count AND getMissionProg
   assert.ok(progress > 0);
   assert.ok(progress < 100);
   // observe is index 0 → ((0 + 1) / 5) * 100 = 20
-  assert.equal(progress, 20);
+  assert.equal(progress, 17);
 });
 
 test("diffVersions handles null previous JSON AND getEstimatedTimeToPayment decreases as cycles advance", () => {

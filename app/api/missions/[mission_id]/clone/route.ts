@@ -69,6 +69,12 @@ export async function POST(request: Request, context: RouteContext) {
       mode: source.mode,
       websiteUrl: source.inspected.final_url,
       workspaceId: workspace.id,
+      run: {
+        model: "deterministic-clone",
+        prompt_version: "mission-clone-v1",
+        started_at: Date.now(),
+        completed_at: Date.now(),
+      },
     });
 
     if (!saved) {

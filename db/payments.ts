@@ -85,6 +85,7 @@ export async function recordPayment(
       ? Math.max(0, Math.min(100, Math.floor(input.attribution_confidence)))
       : 0;
   const rawEventJson = input.raw_event ? JSON.stringify(input.raw_event) : null;
+  await assertAttributionOwnership(workspaceId, input);
 
   // Look up an existing row by the natural key (workspace + provider +
   // provider_payment_id) before deciding to insert or update. This mirrors
@@ -127,6 +128,10 @@ export async function recordPayment(
     if (!updated) {
       throw new Error(`Payment disappeared after update: ${existing.id}`);
     }
+    await syncMissionPaymentCount(workspaceId, existing.mission_id);
+    if (updated.mission_id !== existing.mission_id) {
+      await syncMissionPaymentCount(workspaceId, updated.mission_id);
+    }
     return updated;
   }
 
@@ -159,7 +164,43 @@ export async function recordPayment(
   if (!row) {
     throw new Error("Failed to record payment");
   }
+  await syncMissionPaymentCount(workspaceId, row.mission_id);
   return row;
+}
+
+async function assertAttributionOwnership(
+  workspaceId: string,
+  input: RecordPaymentInput,
+): Promise<void> {
+  const db = getRawDb();
+  const checks: Array<Promise<unknown>> = [];
+  if (input.mission_id) {
+    checks.push(db.prepare("SELECT id FROM missions WHERE id = ? AND workspace_id = ? LIMIT 1").bind(input.mission_id, workspaceId).first());
+  }
+  if (input.action_id) {
+    checks.push(db.prepare("SELECT id FROM action_queue WHERE id = ? AND workspace_id = ? LIMIT 1").bind(input.action_id, workspaceId).first());
+  }
+  if (input.experiment_id) {
+    checks.push(db.prepare("SELECT id FROM experiments WHERE id = ? AND workspace_id = ? LIMIT 1").bind(input.experiment_id, workspaceId).first());
+  }
+  const results = await Promise.all(checks);
+  if (results.some((result) => !result)) {
+    throw new Error("Payment attribution references must belong to the workspace");
+  }
+}
+
+async function syncMissionPaymentCount(
+  workspaceId: string,
+  missionId: string | null,
+): Promise<void> {
+  if (!missionId) return;
+  const db = getRawDb();
+  await db
+    .prepare(
+      "UPDATE missions SET payment_count = (SELECT COUNT(*) FROM payments WHERE workspace_id = ? AND mission_id = ? AND status = 'succeeded'), updated_at = ? WHERE id = ? AND workspace_id = ?",
+    )
+    .bind(workspaceId, missionId, Date.now(), missionId, workspaceId)
+    .run();
 }
 
 /** Fetch a single payment by id within a workspace. */

@@ -1,5 +1,8 @@
 # Distribution OS — Architecture
 
+> Runtime-status note: [CURRENT_STATE.md](CURRENT_STATE.md) distinguishes
+> implemented paths from target architecture.
+
 > Canonical architecture reference for the agentic marketing & distribution
 > operating system. This document is the source of truth for the runtime
 > stack, data model, API surface, UI surface, pure-logic modules, security

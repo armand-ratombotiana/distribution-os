@@ -3,8 +3,6 @@
  * comparison, and a small `sortByField` utility. No dependencies.
  */
 
-type AnyInput = Date | number | string | unknown;
-
 /** Strict deep equality that handles primitives, arrays, plain objects and Dates. */
 export function deepEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true;

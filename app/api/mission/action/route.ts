@@ -101,7 +101,7 @@ export async function POST(request: Request) {
     const input = actionSchema.parse(await request.json());
 
     if (input.action === "approve") {
-      const result = await approveMission(input.mission_id, workspace.id);
+      const result = await approveMission(input.mission_id, workspace.id, identity.userId);
       if (!result) {
         return Response.json({ error: "Mission not found." }, { status: 404 });
       }
@@ -164,6 +164,12 @@ export async function POST(request: Request) {
     if (error instanceof Error && error.message === "AUTH_REQUIRED") return Response.json({ error: "Sign in to control this mission." }, { status: 401 });
     if (error instanceof z.ZodError) {
       return Response.json({ error: "Invalid mission action." }, { status: 400 });
+    }
+    if (error instanceof Error && error.message.startsWith("MISSION_BLOCKED:")) {
+      return Response.json(
+        { error: error.message.replace("MISSION_BLOCKED:", "").trim() },
+        { status: 409 },
+      );
     }
     return Response.json(
       { error: error instanceof Error ? error.message : "Mission action failed." },

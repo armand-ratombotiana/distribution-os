@@ -14,10 +14,11 @@ import {
   getEstimatedTimeToPayment,
 } from "../lib/mission-lifecycle-pure";
 
-test("STAGE_ORDER has 5 stages in correct order", () => {
+test("STAGE_ORDER has 6 stages in correct order", () => {
   assert.deepEqual([...STAGE_ORDER], [
     "observe",
     "decide",
+    "approve",
     "act",
     "measure",
     "learn",
@@ -26,7 +27,8 @@ test("STAGE_ORDER has 5 stages in correct order", () => {
 
 test("STAGE_TRANSITIONS maps each stage to the next", () => {
   assert.equal(STAGE_TRANSITIONS.observe, "decide");
-  assert.equal(STAGE_TRANSITIONS.decide, "act");
+  assert.equal(STAGE_TRANSITIONS.decide, "approve");
+  assert.equal(STAGE_TRANSITIONS.approve, "act");
   assert.equal(STAGE_TRANSITIONS.act, "measure");
   assert.equal(STAGE_TRANSITIONS.measure, "learn");
   assert.equal(STAGE_TRANSITIONS.learn, "observe");
@@ -34,7 +36,8 @@ test("STAGE_TRANSITIONS maps each stage to the next", () => {
 
 test("getNextStage returns correct next stage for each stage", () => {
   assert.equal(getNextStage("observe"), "decide");
-  assert.equal(getNextStage("decide"), "act");
+  assert.equal(getNextStage("decide"), "approve");
+  assert.equal(getNextStage("approve"), "act");
   assert.equal(getNextStage("act"), "measure");
   assert.equal(getNextStage("measure"), "learn");
   assert.equal(getNextStage("learn"), "observe");
@@ -70,16 +73,16 @@ test("shouldIncrementCycle is false for non-wrapping transitions", () => {
   assert.equal(shouldIncrementCycle("learn", "decide"), false);
 });
 
-test("isStageCompleteable gates the act stage on approval", () => {
+test("isStageCompleteable gates the approve stage on approval", () => {
   const unapproved = {
-    current_stage: "act",
+    current_stage: "approve",
     cycle_number: 1,
     payment_count: 0,
     approved: false,
   };
-  assert.equal(isStageCompleteable("act", unapproved), false);
+  assert.equal(isStageCompleteable("approve", unapproved), false);
   const approved = { ...unapproved, approved: true };
-  assert.equal(isStageCompleteable("act", approved), true);
+  assert.equal(isStageCompleteable("approve", approved), true);
 });
 
 test("isStageCompleteable returns true for non-gated stages", () => {
@@ -95,14 +98,14 @@ test("isStageCompleteable returns true for non-gated stages", () => {
   assert.equal(isStageCompleteable("learn", mission), true);
 });
 
-test("getMissionReadiness blocks when the act stage is not approved", () => {
+test("getMissionReadiness blocks until an exact action is approved", () => {
   const mission = {
-    current_stage: "act",
+    current_stage: "approve",
     cycle_number: 1,
     payment_count: 0,
     approved: false,
   };
-  const readiness = getMissionReadiness(mission);
+  const readiness = getMissionReadiness(mission, { pendingApprovals: 1 });
   assert.equal(readiness.can_advance, false);
   assert.equal(readiness.requires_approval, true);
   assert.ok(readiness.blocking_reasons.length >= 1);
@@ -129,19 +132,23 @@ test("getMissionProgress returns less than 100 when no payment has occurred", ()
   const progress = getMissionProgress(mission);
   assert.ok(progress > 0);
   assert.ok(progress < 100);
-  assert.equal(progress, 20);
+  assert.equal(progress, 17);
 });
 
-test("shouldAutoAdvance is false when the act stage is not approved", () => {
+test("shouldAutoAdvance requires approval then provider-confirmed execution", () => {
   const unapproved = {
-    current_stage: "act",
+    current_stage: "approve",
     cycle_number: 1,
     payment_count: 0,
     approved: false,
   };
   assert.equal(shouldAutoAdvance(unapproved, {}), false);
   const approved = { ...unapproved, approved: true };
-  assert.equal(shouldAutoAdvance(approved, {}), true);
+  assert.equal(shouldAutoAdvance(approved, { approvedActions: 1 }), true);
+  assert.equal(
+    shouldAutoAdvance({ ...approved, current_stage: "act" }, { executedActions: 0 }),
+    false,
+  );
 });
 
 test("getEstimatedTimeToPayment is positive and decreases as cycles advance", () => {

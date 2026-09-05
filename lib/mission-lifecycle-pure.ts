@@ -1,15 +1,16 @@
 // Pure mission-lifecycle helpers.
 //
-// The Distribution OS mission loop runs through five stages:
-//   observe -> decide -> act -> measure -> learn -> observe (cycle increments).
+// The Distribution OS mission loop runs through six stages:
+//   observe -> decide -> approve -> act -> measure -> learn -> observe.
 // This module is intentionally side-effect free so it can be unit tested in
 // isolation and reused by route handlers, workers, and the UI.
 
-export type MissionStage = "observe" | "decide" | "act" | "measure" | "learn";
+export type MissionStage = "observe" | "decide" | "approve" | "act" | "measure" | "learn";
 
 export const STAGE_ORDER: readonly MissionStage[] = [
   "observe",
   "decide",
+  "approve",
   "act",
   "measure",
   "learn",
@@ -17,7 +18,8 @@ export const STAGE_ORDER: readonly MissionStage[] = [
 
 export const STAGE_TRANSITIONS: Record<MissionStage, MissionStage> = {
   observe: "decide",
-  decide: "act",
+  decide: "approve",
+  approve: "act",
   act: "measure",
   measure: "learn",
   learn: "observe",
@@ -28,6 +30,8 @@ const STAGE_DESCRIPTIONS: Record<MissionStage, string> = {
     "Capture website intelligence and refresh mission evidence for the current cycle.",
   decide:
     "Rank the next experiment against current evidence and the first-payment objective.",
+  approve:
+    "Wait for a human to approve one exact external action, payload and expiry.",
   act: "Prepare the next safe internal action; external publication remains approval-gated.",
   measure:
     "Open the measurement window and wait for attributable channel signals.",
@@ -78,35 +82,58 @@ export function isStageCompleteable(
   mission: MissionStateSnapshot
 ): boolean {
   if (!isMissionStage(stage)) return false;
-  if (stage === "act") return mission.approved === true;
+  if (stage === "approve") return mission.approved === true;
   if (stage === "learn") return mission.cycle_number >= 1;
   return true;
 }
 
 export function getMissionReadiness(
   mission: MissionStateSnapshot,
-  conditions?: { pendingApprovals?: number; openExperiments?: number }
+  conditions?: {
+    pendingApprovals?: number;
+    approvedActions?: number;
+    executedActions?: number;
+    openExperiments?: number;
+    measurementSignals?: number;
+  }
 ): MissionReadiness {
   const blocking_reasons: string[] = [];
   let requires_approval = false;
 
-  if (mission.current_stage === "act" && !mission.approved) {
+  if (
+    mission.current_stage === "approve" &&
+    (conditions?.approvedActions ?? 0) === 0 &&
+    (conditions?.executedActions ?? 0) === 0
+  ) {
+    const pending = conditions?.pendingApprovals ?? 0;
     blocking_reasons.push(
-      "External actions require human approval before the act stage can complete."
+      pending > 0
+        ? `${pending} exact action approval(s) pending.`
+        : "Approve stage requires an action-specific approval.",
     );
     requires_approval = true;
   }
 
-  const pending = conditions?.pendingApprovals ?? 0;
-  if (pending > 0) {
-    blocking_reasons.push(`${pending} approval(s) pending in the action queue.`);
-    requires_approval = true;
+  if (
+    mission.current_stage === "act" &&
+    (conditions?.executedActions ?? 0) === 0
+  ) {
+    blocking_reasons.push("Act stage requires a provider-confirmed execution result.");
   }
 
   const openExperiments = conditions?.openExperiments ?? 0;
   if (mission.current_stage === "measure" && openExperiments === 0) {
     blocking_reasons.push(
       "Measure stage requires at least one open experiment before advancing."
+    );
+  }
+
+  if (
+    mission.current_stage === "measure" &&
+    (conditions?.measurementSignals ?? 0) === 0
+  ) {
+    blocking_reasons.push(
+      "Measure stage requires at least one attributable signal before learning.",
     );
   }
 
@@ -131,18 +158,31 @@ export function shouldAutoAdvance(
   mission: MissionStateSnapshot,
   conditions: {
     pendingApprovals?: number;
+    approvedActions?: number;
+    executedActions?: number;
     openExperiments?: number;
+    measurementSignals?: number;
     paymentCount?: number;
   }
 ): boolean {
-  if ((conditions.pendingApprovals ?? 0) > 0) return false;
-  if (mission.current_stage === "act" && !mission.approved) return false;
+  if (
+    mission.current_stage === "approve" &&
+    (conditions.approvedActions ?? 0) === 0 &&
+    (conditions.executedActions ?? 0) === 0
+  ) return false;
+  if (mission.current_stage === "act" && (conditions.executedActions ?? 0) === 0) {
+    return false;
+  }
   if (
     mission.current_stage === "measure" &&
     (conditions.openExperiments ?? 0) === 0
   ) {
     return false;
   }
+  if (
+    mission.current_stage === "measure" &&
+    (conditions.measurementSignals ?? 0) === 0
+  ) return false;
   if ((conditions.paymentCount ?? mission.payment_count) > 0) return false;
   return true;
 }

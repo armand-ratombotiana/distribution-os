@@ -1,4 +1,5 @@
 import { AUDIT_CATEGORIES, type AuditCategory } from "./schema";
+export type { AuditCategory } from "./schema";
 
 /**
  * Pure helpers for the `audit_events` table.
@@ -77,7 +78,8 @@ export async function hashIp(ip: string): Promise<string> {
 export function summarizeForDisplay(
   row: AuditEventRow,
 ): Omit<AuditEventRow, "ip_hash"> {
-  const { ip_hash: _ipHash, ...rest } = row;
+  const rest = { ...row };
+  Reflect.deleteProperty(rest, "ip_hash");
   return rest;
 }
 

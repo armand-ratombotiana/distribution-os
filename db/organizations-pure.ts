@@ -1,4 +1,5 @@
 import { ORG_ROLES, type OrgRole } from "./schema";
+export type { OrgRole } from "./schema";
 
 /**
  * Pure helpers for the `organizations`, `organization_memberships` and
@@ -197,6 +198,7 @@ export function summarizeMembershipForDisplay(row: OrganizationMembershipRow): {
 export function summarizeInvitationForDisplay(
   row: OrganizationInvitationRow,
 ): Omit<OrganizationInvitationRow, "token_hash"> {
-  const { token_hash: _tokenHash, ...rest } = row;
+  const rest = { ...row };
+  Reflect.deleteProperty(rest, "token_hash");
   return rest;
 }

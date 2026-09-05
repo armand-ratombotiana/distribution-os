@@ -4,7 +4,6 @@ import { getRawDb } from "../../../db/index";
 import { getLatestMission, saveMission } from "../../../db/missions";
 import { ensureWorkspace, requireRequestIdentity, type RequestIdentity } from "../../../db/workspaces";
 import { buildAuditEntry, hashIp } from "../../../db/audit-pure";
-import { buildEvidenceId, canonicalJson, hashContent } from "../../../db/evidence-pure";
 import {
   fetchWithRedirectLimit,
   REQUEST_TIMEOUT_MS,
@@ -14,10 +13,64 @@ import { prepareExternalContent } from "../../../lib/content-sanitize-pure";
 
 const requestSchema = z.object({ website_url: z.string().trim().url().max(500) });
 
+const missionOutputSchema = z.object({
+  product_name: z.string().trim().min(1).max(200),
+  product_summary: z.string().trim().min(1).max(2_000),
+  executive_thesis: z.string().trim().min(1).max(3_000),
+  north_star_metric: z.string().trim().min(1).max(500),
+  icp: z.object({
+    segment: z.string().trim().min(1).max(1_000),
+    pain: z.string().trim().min(1).max(1_000),
+    trigger: z.string().trim().min(1).max(1_000),
+    exclusion: z.string().trim().min(1).max(1_000),
+  }).strict(),
+  strategy: z.object({
+    primary_channel: z.string().trim().min(1).max(200),
+    offer: z.string().trim().min(1).max(2_000),
+    message: z.string().trim().min(1).max(2_000),
+    why_now: z.string().trim().min(1).max(2_000),
+  }).strict(),
+  assumptions: z.array(z.object({
+    statement: z.string().trim().min(1).max(1_000),
+    confidence: z.number().int().min(1).max(100),
+    evidence_needed: z.string().trim().min(1).max(1_000),
+  }).strict()).length(3),
+  agents: z.array(z.object({
+    name: z.string().trim().min(1).max(200),
+    role: z.string().trim().min(1).max(500),
+    output: z.string().trim().min(1).max(2_000),
+  }).strict()).length(6),
+  experiments: z.array(z.object({
+    title: z.string().trim().min(1).max(200),
+    hypothesis: z.string().trim().min(1).max(1_000),
+    action: z.string().trim().min(1).max(2_000),
+    metric: z.string().trim().min(1).max(200),
+    kill_rule: z.string().trim().min(1).max(500),
+  }).strict()).length(3),
+  content_queue: z.array(z.object({
+    platform: z.enum(["YouTube", "TikTok", "X", "Instagram", "Website"]),
+    format: z.string().trim().min(1).max(200),
+    hook: z.string().trim().min(1).max(280),
+    cta: z.string().trim().min(1).max(500),
+  }).strict()).length(5),
+  approval: z.object({
+    action: z.string().trim().min(1).max(1_000),
+    risk: z.string().trim().min(1).max(1_000),
+    reason: z.string().trim().min(1).max(2_000),
+  }).strict(),
+}).strict();
+
+function parseMissionOutput(value: unknown) {
+  const parsed = missionOutputSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new Error("The mission synthesis returned an invalid structured result.");
+  }
+  return parsed.data;
+}
+
 const missionSchema = {
   type: "object",
   properties: {
-    mission_id: { type: "string" },
     product_name: { type: "string" },
     product_summary: { type: "string" },
     executive_thesis: { type: "string" },
@@ -30,7 +83,7 @@ const missionSchema = {
     content_queue: { type: "array", minItems: 5, maxItems: 5, items: { type: "object", properties: { platform: { type: "string", enum: ["YouTube", "TikTok", "X", "Instagram", "Website"] }, format: { type: "string" }, hook: { type: "string" }, cta: { type: "string" } }, required: ["platform", "format", "hook", "cta"], additionalProperties: false } },
     approval: { type: "object", properties: { action: { type: "string" }, risk: { type: "string" }, reason: { type: "string" } }, required: ["action", "risk", "reason"], additionalProperties: false },
   },
-  required: ["mission_id", "product_name", "product_summary", "executive_thesis", "north_star_metric", "icp", "strategy", "assumptions", "agents", "experiments", "content_queue", "approval"],
+  required: ["product_name", "product_summary", "executive_thesis", "north_star_metric", "icp", "strategy", "assumptions", "agents", "experiments", "content_queue", "approval"],
   additionalProperties: false,
 } as const;
 
@@ -62,7 +115,7 @@ function demoMission(site: { title: string; description: string; body: string },
   const product = site.title.split(/[|—–-]/)[0]?.trim() || hostname;
   const summary = site.description || `The public website at ${hostname} presents ${product}.`;
   return {
-    mission_id: `MISSION-${Date.now().toString(36).toUpperCase()}`, product_name: product, product_summary: summary,
+    product_name: product, product_summary: summary,
     executive_thesis: `${product} needs one provable customer outcome before scaling distribution. The system will turn the website promise into a narrow ICP, publish channel-native evidence, learn from response signals, and optimize toward the first confirmed payment.`,
     north_star_metric: "First confirmed Stripe payment from an attributable distribution touchpoint",
     icp: { segment: "Early adopters with an urgent version of the problem described on the website", pain: "The existing alternative costs time, revenue or operational focus.", trigger: "A recent failed attempt, launch, deadline or visible search for a replacement.", exclusion: "Low-urgency visitors without authority, budget or a near-term reason to act." },
@@ -149,47 +202,6 @@ async function logAuditEvent(args: {
     .run();
 }
 
-async function createEvidence(args: {
-  workspaceId: string;
-  missionId: string;
-  sourceUrl: string;
-  sourceType: "website" | "email" | "social" | "crm" | "analytics" | "payment" | "document" | "manual";
-  title: string;
-  summary: string;
-  rawContent: unknown;
-}) {
-  const db = getRawDb();
-  const contentHash = await hashContent(args.rawContent);
-  const id = buildEvidenceId({
-    workspaceId: args.workspaceId,
-    missionId: args.missionId,
-    contentHash,
-  });
-  const now = Date.now();
-  const facts = canonicalJson({ title: args.title, source_url: args.sourceUrl });
-  const provenance = canonicalJson({ fetched_at: now, parser_version: "1.0" });
-  await db
-    .prepare(
-      "INSERT INTO evidence (id, workspace_id, mission_id, source_url, source_type, content_hash, parser_version, title, summary, extracted_facts_json, provenance_json, state, contradiction_of_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, '1.0', ?, ?, ?, ?, 'observed', NULL, ?, ?) ON CONFLICT(id) DO UPDATE SET title = excluded.title, summary = excluded.summary, updated_at = excluded.updated_at"
-    )
-    .bind(
-      id,
-      args.workspaceId,
-      args.missionId,
-      args.sourceUrl,
-      args.sourceType,
-      contentHash,
-      args.title,
-      args.summary,
-      facts,
-      provenance,
-      now,
-      now,
-    )
-    .run();
-  return { id, contentHash };
-}
-
 export async function POST(request: Request) {
   try {
     const identity = requireRequestIdentity(request);
@@ -204,9 +216,28 @@ export async function POST(request: Request) {
     const runtime = env as unknown as { OPENAI_API_KEY?: string; OPENAI_MODEL?: string };
     let saved: Awaited<ReturnType<typeof saveMission>>;
     let liveMode = false;
+    const runStartedAt = Date.now();
     if (!runtime.OPENAI_API_KEY) {
-      const mission = demoMission(site, url.hostname);
-      saved = await saveMission({ mission, mode: "simulation", websiteUrl: site.final_url, workspaceId: workspace.id });
+      const mission = parseMissionOutput(demoMission(site, url.hostname));
+      const missionWithId = { ...mission, mission_id: `MISSION-${crypto.randomUUID()}` };
+      saved = await saveMission({
+        mission: missionWithId,
+        mode: "simulation",
+        websiteUrl: site.final_url,
+        workspaceId: workspace.id,
+        run: {
+          model: "deterministic-simulation",
+          prompt_version: "mission-bootstrap-v2",
+          started_at: runStartedAt,
+          completed_at: Date.now(),
+        },
+        websiteEvidence: {
+          source_url: site.final_url,
+          title: site.title,
+          summary: site.description || `Website intelligence captured from ${url.hostname}.`,
+          content: { url: site.final_url, title: site.title, description: site.description, body: prepared.text },
+        },
+      });
     } else {
       liveMode = true;
       const response = await fetch("https://api.openai.com/v1/responses", { method: "POST", headers: { Authorization: `Bearer ${runtime.OPENAI_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify({
@@ -215,26 +246,37 @@ export async function POST(request: Request) {
         input: `Website URL: ${site.final_url}\nTitle: ${site.title}\nMeta description: ${site.description}\nVisible website text:\n${prepared.wrapped}`,
         text: { format: { type: "json_schema", name: "distribution_mission", strict: true, schema: missionSchema } },
       }) });
-      const data = await response.json() as { error?: { message?: string } }; if (!response.ok) return Response.json({ error: data?.error?.message || "The AI CMO could not complete the mission." }, { status: response.status });
+      const data = await response.json() as {
+        error?: { message?: string };
+        usage?: { input_tokens?: number; output_tokens?: number };
+      }; if (!response.ok) return Response.json({ error: data?.error?.message || "The AI CMO could not complete the mission." }, { status: response.status });
       const output = extractOutputText(data); if (!output) return Response.json({ error: "The AI CMO returned no structured result." }, { status: 502 });
-      const mission = JSON.parse(output) as Record<string, unknown> & { mission_id: string; product_name: string };
-      mission.mission_id = `MISSION-${crypto.randomUUID()}`;
-      saved = await saveMission({ mission, mode: "live", websiteUrl: site.final_url, workspaceId: workspace.id });
+      const mission = parseMissionOutput(JSON.parse(output));
+      const missionWithId = { ...mission, mission_id: `MISSION-${crypto.randomUUID()}` };
+      saved = await saveMission({
+        mission: missionWithId,
+        mode: "live",
+        websiteUrl: site.final_url,
+        workspaceId: workspace.id,
+        run: {
+          model: runtime.OPENAI_MODEL || "gpt-5.6",
+          prompt_version: "mission-bootstrap-v2",
+          started_at: runStartedAt,
+          completed_at: Date.now(),
+          tokens_input: data.usage?.input_tokens,
+          tokens_output: data.usage?.output_tokens,
+        },
+        websiteEvidence: {
+          source_url: site.final_url,
+          title: site.title,
+          summary: site.description || `Website intelligence captured from ${url.hostname}.`,
+          content: { url: site.final_url, title: site.title, description: site.description, body: prepared.text },
+        },
+      });
     }
 
     const missionId = saved?.state?.mission_id;
     if (missionId) {
-      try {
-        await createEvidence({
-          workspaceId: workspace.id,
-          missionId,
-          sourceUrl: site.final_url,
-          sourceType: "website",
-          title: site.title,
-          summary: site.description || `Website intelligence captured from ${url.hostname}.`,
-          rawContent: { url: site.final_url, title: site.title, description: site.description, body: prepared.text },
-        });
-      } catch { /* evidence must not block mission creation */ }
       try {
         await logAuditEvent({
           workspaceId: workspace.id,

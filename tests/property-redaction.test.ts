@@ -101,10 +101,6 @@ function randomId(rng: () => number, prefix: string): string {
   return s;
 }
 
-function randomTs(rng: () => number): number {
-  return Math.floor(rng() * 1_700_000_000_000);
-}
-
 // Walk every leaf string in any JSON-serialisable value and return true if
 // the marker appears anywhere.
 function containsMarker(value: unknown, marker: string): boolean {

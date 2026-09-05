@@ -1,5 +1,8 @@
 # Distribution OS — Security Audit
 
+> Runtime-status note: see [CURRENT_STATE.md](CURRENT_STATE.md) for the
+> currently verified execution boundary and open security work.
+
 > Layered defence-in-depth reference for Distribution OS. Each section
 > describes a threat, the control(s) that mitigate it, where the control
 > lives in the codebase, and how it is tested. Controls are

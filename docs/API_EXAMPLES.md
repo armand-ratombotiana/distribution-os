@@ -1,5 +1,8 @@
 # Distribution OS — API Examples
 
+> Runtime-status note: [CURRENT_STATE.md](CURRENT_STATE.md) is authoritative
+> where examples include planned execution behavior.
+
 > Copy-paste curl recipes for every major Distribution OS endpoint.
 > Use these as a starting point for integrations, smoke tests, and
 > debugging sessions. See [`API_REFERENCE.md`](./API_REFERENCE.md) for

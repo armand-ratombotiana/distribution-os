@@ -13,14 +13,11 @@ const confirmSchema = z.object({
 
 /**
  * Tables that hold workspace-scoped data, ordered so that every row is
- * removed before its parent (FK-safe). The `audit_events` row written by
- * this endpoint is intentionally inserted BEFORE the cascade so it survives
- * the deletion and remains queryable for compliance review.
+ * removed before its parent (FK-safe). The successful deletion is recorded
+ * after the batch so the audit log never claims a failed deletion completed.
  */
 const DELETION_TABLES = [
-  "agent_steps",
   "agent_runs",
-  "mission_events",
   "mission_versions",
   "strategy_versions",
   "evidence",
@@ -84,8 +81,12 @@ export async function POST(request: Request) {
     const workspace = await ensureWorkspace(identity);
     const input = confirmSchema.parse(await request.json());
 
-    // Audit BEFORE deletion so the record survives the cascade (audit_events
-    // is itself workspace-scoped via FK and would be removed otherwise).
+    const db = getRawDb();
+    const statements = DELETION_TABLES.map((table) =>
+      db.prepare(`DELETE FROM ${table} WHERE workspace_id = ?`).bind(workspace.id),
+    );
+    await db.batch(statements);
+
     await logAuditEvent({
       workspaceId: workspace.id,
       identity,
@@ -95,14 +96,9 @@ export async function POST(request: Request) {
         confirm: input.confirm,
         owner_email: workspace.owner_email,
         tables: [...DELETION_TABLES],
+        cascaded_tables: ["agent_steps", "mission_events"],
       },
     });
-
-    const db = getRawDb();
-    const statements = DELETION_TABLES.map((table) =>
-      db.prepare(`DELETE FROM ${table} WHERE workspace_id = ?`).bind(workspace.id),
-    );
-    await db.batch(statements);
 
     return Response.json({
       deleted: true,

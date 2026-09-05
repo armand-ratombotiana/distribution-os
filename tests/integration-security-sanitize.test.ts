@@ -86,7 +86,7 @@ test("validatePublicUrl rejects a non-standard port AND sanitizeForModel removes
   assert.ok(ALLOWED_PORTS.includes(443));
   assert.ok(ALLOWED_PORTS.includes(8080));
   // Port 22 is NOT in the allowed list
-  assert.ok(!ALLOWED_PORTS.includes(22));
+  assert.ok(!(ALLOWED_PORTS as readonly number[]).includes(22));
 
   const result = sanitizeForModel("\x1b[31mred\x1b[0m text");
   assert.equal(result, "red text");

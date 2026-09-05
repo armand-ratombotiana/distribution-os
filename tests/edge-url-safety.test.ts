@@ -100,7 +100,7 @@ test("edge: validatePublicUrl accepts ports 8080, 8443, 3000 and 5173 (non-defau
   for (const port of [8080, 8443, 3000, 5173]) {
     const url = validatePublicUrl(`https://example.com:${port}/path`);
     assert.equal(Number(url.port), port, `port ${port} should be preserved`);
-    assert.ok(ALLOWED_PORTS.includes(port));
+    assert.ok((ALLOWED_PORTS as readonly number[]).includes(port));
   }
 });
 
@@ -148,8 +148,7 @@ test("edge: validatePublicUrl rejects empty, whitespace-only and non-string inpu
 test("edge: fetchWithRedirectLimit follows a chain of MAX_REDIRECTS hops and stops there", async () => {
   // Build a chain that redirects exactly MAX_REDIRECTS times, then succeeds.
   let count = 0;
-  const fetchImpl: FetchImpl = async (input) => {
-    const href = typeof input === "string" ? input : (input as URL).href ?? (input as Request).url;
+  const fetchImpl: FetchImpl = async () => {
     count++;
     if (count <= MAX_REDIRECTS) {
       return new Response(null, {

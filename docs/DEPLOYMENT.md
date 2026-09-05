@@ -1,5 +1,8 @@
 # Distribution OS — Deployment Guide
 
+> Runtime-status note: verify release claims against
+> [CURRENT_STATE.md](CURRENT_STATE.md) before deploying.
+
 > End-to-end deployment reference for Distribution OS on Cloudflare
 > Workers + D1. Covers local development, preview deploys, production
 > deploys, database migrations, environment variables, and monitoring.

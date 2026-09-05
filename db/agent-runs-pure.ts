@@ -1,4 +1,5 @@
 import { AGENT_RUN_STATUSES, type AgentRunStatus } from "./schema";
+export type { AgentRunStatus } from "./schema";
 
 /**
  * Pure helpers for the `agent_runs` and `agent_steps` tables.
@@ -129,7 +130,10 @@ export function calculateLatencyMs(
 export function summarizeRunForDisplay(
   row: AgentRunRow,
 ): Omit<AgentRunRow, "workspace_id" | "input_refs_json" | "output_refs_json"> {
-  const { workspace_id: _w, input_refs_json: _i, output_refs_json: _o, ...rest } = row;
+  const rest = { ...row };
+  Reflect.deleteProperty(rest, "workspace_id");
+  Reflect.deleteProperty(rest, "input_refs_json");
+  Reflect.deleteProperty(rest, "output_refs_json");
   return rest;
 }
 
@@ -141,7 +145,9 @@ export function summarizeRunForDisplay(
 export function summarizeStepForDisplay(
   row: AgentStepRow,
 ): Omit<AgentStepRow, "tool_input_json" | "tool_output_json"> {
-  const { tool_input_json: _i, tool_output_json: _o, ...rest } = row;
+  const rest = { ...row };
+  Reflect.deleteProperty(rest, "tool_input_json");
+  Reflect.deleteProperty(rest, "tool_output_json");
   return rest;
 }
 

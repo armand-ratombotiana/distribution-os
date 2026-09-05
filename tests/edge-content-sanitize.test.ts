@@ -10,7 +10,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  INJECTION_PATTERNS,
   prepareExternalContent,
   sanitizeForModel,
   stripHtml,
@@ -133,7 +132,6 @@ test("edge: very long content (50 KB) is processed without truncation by sanitiz
 test("edge: truncateForModel returns empty string for non-positive maxBytes", () => {
   assert.equal(truncateForModel("hello", 0), "");
   assert.equal(truncateForModel("hello", -1), "");
-  // @ts-expect-error — deliberately passing a non-finite value.
   assert.equal(truncateForModel("hello", Number.NaN), "");
   // @ts-expect-error — deliberately passing non-string input.
   assert.equal(truncateForModel(null, 100), "");

@@ -127,7 +127,6 @@ test("property/budget-check: severity transitions ok → warning → critical �
 // ─── 4. checkBudget: boundary at exactly the threshold ────────────────────
 
 test("property/budget-check: spent exactly at warning/critical/limit boundaries yields the higher severity", () => {
-  const rng = mulberry32(904);
   const limit = 10_000;
   const config: BudgetConfig = {
     monthlyLimitCents: limit,

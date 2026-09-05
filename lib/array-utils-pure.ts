@@ -128,7 +128,7 @@ export function intersection<T>(a: readonly T[], b: readonly T[]): T[] {
  *   flatten([1, [2, [3, [4]]]])             // [1, 2, [3, [4]]]
  *   flatten([1, [2, [3, [4]]]], Infinity)   // [1, 2, 3, 4]
  */
-export function flatten<T>(items: readonly unknown[], depth: number = 1): unknown[] {
+export function flatten(items: readonly unknown[], depth: number = 1): unknown[] {
   if (!Array.isArray(items)) return [];
   // `Array.prototype.flat` accepts Infinity and any non-negative integer.
   return items.flat(Math.max(0, depth));

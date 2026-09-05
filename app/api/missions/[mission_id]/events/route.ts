@@ -1,4 +1,6 @@
 import { getRawDb } from "../../../../../db/index";
+import { getMission } from "../../../../../db/missions";
+import { ensureWorkspace, requireRequestIdentity } from "../../../../../db/workspaces";
 
 type RouteContext = {
   params: Promise<{ mission_id: string }>;
@@ -25,13 +27,25 @@ const HEARTBEAT_INTERVAL_MS = 15_000;
  * sockets. The stream terminates when the client disconnects (the
  * `ReadableStream` cancel callback clears the polling timer).
  *
- * SSE clients cannot set custom headers, so this endpoint is intentionally
- * unauthenticated — only the mission id is required to subscribe. Operators
- * should treat the mission id as a capability token for read-only event
- * streaming and rotate it if it leaks.
+ * The hosting control plane injects identity headers into the EventSource
+ * request. Every initial request and polling query is scoped to the caller's
+ * workspace; a mission id is never treated as an authorization capability.
  */
-export async function GET(_request: Request, context: RouteContext) {
+export async function GET(request: Request, context: RouteContext) {
   const { mission_id } = await context.params;
+  let workspaceId: string;
+  try {
+    const workspace = await ensureWorkspace(requireRequestIdentity(request));
+    workspaceId = workspace.id;
+    if (!(await getMission(mission_id, workspaceId))) {
+      return Response.json({ error: "Mission not found." }, { status: 404 });
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message === "AUTH_REQUIRED") {
+      return Response.json({ error: "Sign in to stream mission events." }, { status: 401 });
+    }
+    return Response.json({ error: "Mission event stream unavailable." }, { status: 500 });
+  }
   const encoder = new TextEncoder();
 
   let interval: ReturnType<typeof setInterval> | null = null;
@@ -57,9 +71,9 @@ export async function GET(_request: Request, context: RouteContext) {
           const db = getRawDb();
           const result = await db
             .prepare(
-              "SELECT id, event_type, title, detail, actor, created_at FROM mission_events WHERE mission_id = ? AND id > ? ORDER BY id ASC LIMIT 100",
+              "SELECT e.id, e.event_type, e.title, e.detail, e.actor, e.created_at FROM mission_events e JOIN missions m ON m.id = e.mission_id WHERE e.mission_id = ? AND m.workspace_id = ? AND e.id > ? ORDER BY e.id ASC LIMIT 100",
             )
-            .bind(mission_id, lastEventId)
+            .bind(mission_id, workspaceId, lastEventId)
             .all<MissionEventRow>();
 
           for (const row of result.results) {

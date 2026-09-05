@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Distribution OS — Agentic customer acquisition",
-  description: "Turn one website URL into a coordinated marketing, distribution and revenue-learning system powered by specialized AI agents.",
+  title: "Distribution OS — Evidence-grounded distribution",
+  description: "Turn one website URL into a governed distribution mission aimed at the first attributable verified payment.",
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",
@@ -17,6 +17,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        <meta name="codex-preview" content="development" />
+      </head>
       <body className="antialiased">{children}</body>
     </html>
   );

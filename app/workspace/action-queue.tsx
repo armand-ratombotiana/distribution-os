@@ -133,18 +133,25 @@ export function ActionQueue({ missionId }: { missionId: string }) {
   }
 
   async function transition(actionId: string, status: ActionStatus) {
+    const endpoint =
+      status === "approved"
+        ? "approve"
+        : status === "rejected"
+          ? "reject"
+          : status === "executed"
+            ? "execute"
+            : null;
+    if (!endpoint) return;
+    setError("");
     try {
-      const response = await fetch(
-        `/api/missions/${missionId}/actions/${actionId}`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status }),
-        },
-      );
-      if (response.ok) await reload();
-    } catch {
-      // transition errors are surfaced via reload state, not blocking UI
+      const response = await fetch(`/api/actions/${actionId}/${endpoint}`, {
+        method: "POST",
+      });
+      const data = (await response.json()) as ActionResponse;
+      if (!response.ok) throw new Error(data.error || `Action ${endpoint} failed`);
+      await reload();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Action transition failed");
     }
   }
 
@@ -231,6 +238,7 @@ export function ActionQueue({ missionId }: { missionId: string }) {
               </header>
               <h3>{action.title}</h3>
               <p>{action.summary}</p>
+              {action.blocker && <p className="ws-error"><CircleAlert /> {action.blocker}</p>}
               <footer className="ws-card-foot">
                 <small>
                   <Clock /> Expires {new Date(action.expires_at).toLocaleString()}

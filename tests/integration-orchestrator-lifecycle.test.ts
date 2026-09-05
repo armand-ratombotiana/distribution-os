@@ -38,19 +38,19 @@ const baseMission = {
   approved: false,
 };
 
-test("AGENT_REGISTRY has 15 agents AND STAGE_ORDER has 5 stages", () => {
+test("AGENT_REGISTRY has 15 agents AND STAGE_ORDER has 6 stages", () => {
   assert.equal(Object.keys(AGENT_REGISTRY).length, 15);
-  assert.equal(STAGE_ORDER.length, 5);
-  assert.deepEqual([...STAGE_ORDER], ["observe", "decide", "act", "measure", "learn"]);
+  assert.equal(STAGE_ORDER.length, 6);
+  assert.deepEqual([...STAGE_ORDER], ["observe", "decide", "approve", "act", "measure", "learn"]);
 });
 
-test("canAgentRun returns true for scout with no deps AND getNextStage returns 'act' for 'decide'", () => {
+test("canAgentRun returns true for scout with no deps AND getNextStage returns 'approve' for 'decide'", () => {
   const scout = getAgent("scout")!;
   assert.ok(scout);
   assert.equal(canAgentRun(scout, {}), true);
   assert.equal(scout.priority, 100);
 
-  assert.equal(getNextStage("decide"), "act");
+  assert.equal(getNextStage("decide"), "approve");
   assert.equal(getNextStage("observe"), "decide");
 });
 
@@ -81,7 +81,7 @@ test("getRunnableAgents returns scout and coordinator for empty context AND shou
   assert.equal(shouldIncrementCycle("observe", "decide"), false);
 });
 
-test("canAgentRun returns false when a dependency has not completed AND isStageCompleteable gates act on approval", () => {
+test("canAgentRun returns false when a dependency has not completed AND isStageCompleteable gates approve", () => {
   const analyst = getAgent("analyst")!;
   assert.equal(canAgentRun(analyst, { hasResearch: true }, []), false);
   assert.equal(canAgentRun(analyst, { hasResearch: true }, ["scout"]), true);
@@ -89,14 +89,14 @@ test("canAgentRun returns false when a dependency has not completed AND isStageC
   assert.equal(canAgentRun(analyst, {}, ["scout"]), false);
 
   const unapproved = {
-    current_stage: "act",
+    current_stage: "approve",
     cycle_number: 1,
     payment_count: 0,
     approved: false,
   };
-  assert.equal(isStageCompleteable("act", unapproved), false);
+  assert.equal(isStageCompleteable("approve", unapproved), false);
   const approved = { ...unapproved, approved: true };
-  assert.equal(isStageCompleteable("act", approved), true);
+  assert.equal(isStageCompleteable("approve", approved), true);
 });
 
 test("getExecutionOrder respects topological order AND STAGE_TRANSITIONS maps each stage to next", () => {
@@ -118,18 +118,19 @@ test("getExecutionOrder respects topological order AND STAGE_TRANSITIONS maps ea
   assert.ok(order.indexOf("ads") < order.indexOf("finance"));
 
   assert.equal(STAGE_TRANSITIONS.observe, "decide");
-  assert.equal(STAGE_TRANSITIONS.decide, "act");
+  assert.equal(STAGE_TRANSITIONS.decide, "approve");
+  assert.equal(STAGE_TRANSITIONS.approve, "act");
   assert.equal(STAGE_TRANSITIONS.act, "measure");
   assert.equal(STAGE_TRANSITIONS.measure, "learn");
   assert.equal(STAGE_TRANSITIONS.learn, "observe");
 });
 
-test("getNextBestAction returns undefined when nothing can run AND getMissionReadiness blocks unapproved act stage", () => {
+test("getNextBestAction returns undefined when nothing can run AND readiness blocks unapproved action", () => {
   const next = getNextBestAction({}, ["scout", "coordinator"]);
   assert.equal(next, undefined);
 
   const readiness = getMissionReadiness({
-    current_stage: "act",
+    current_stage: "approve",
     cycle_number: 1,
     payment_count: 0,
     approved: false,
@@ -139,21 +140,21 @@ test("getNextBestAction returns undefined when nothing can run AND getMissionRea
   assert.ok(readiness.blocking_reasons.length >= 1);
 });
 
-test("canAgentRun returns false when requires predicate fails AND shouldAutoAdvance is false when act is not approved", () => {
+test("canAgentRun returns false when requires predicate fails AND shouldAutoAdvance requires action approval", () => {
   const ads = getAgent("ads")!;
   // requires hasStrategy && budget > 0 — fails when budget is 0
   assert.equal(canAgentRun(ads, { hasStrategy: true, budget: 0 }, ["strategist"]), false);
   assert.equal(canAgentRun(ads, { hasStrategy: true, budget: 100 }, ["strategist"]), true);
 
   const unapproved = {
-    current_stage: "act",
+    current_stage: "approve",
     cycle_number: 1,
     payment_count: 0,
     approved: false,
   };
   assert.equal(shouldAutoAdvance(unapproved, {}), false);
   const approved = { ...unapproved, approved: true };
-  assert.equal(shouldAutoAdvance(approved, {}), true);
+  assert.equal(shouldAutoAdvance(approved, { approvedActions: 1 }), true);
 });
 
 test("getExecutionOrder returns 15 agents for full context AND getEstimatedTimeToPayment is positive", () => {
@@ -194,7 +195,10 @@ test("canAgentRun for ads requires budget > 0 and strategist completed AND getMi
   // strategist not yet completed → cannot run even with budget
   assert.equal(canAgentRun(ads, { hasStrategy: true, budget: 100 }, []), false);
 
-  const readiness = getMissionReadiness(baseMission, { pendingApprovals: 2 });
+  const readiness = getMissionReadiness(
+    { ...baseMission, current_stage: "approve" },
+    { pendingApprovals: 2 },
+  );
   assert.equal(readiness.can_advance, false);
   assert.equal(readiness.requires_approval, true);
   assert.ok(readiness.blocking_reasons.length >= 1);
@@ -213,7 +217,7 @@ test("getRunnableAgents excludes already-completed agents AND getMissionProgress
   assert.ok(progress > 0);
   assert.ok(progress < 100);
   // observe is index 0 → ((0 + 1) / 5) * 100 = 20
-  assert.equal(progress, 20);
+  assert.equal(progress, 17);
 });
 
 test("getNextBestAction tiebreaker is alphabetical name when priorities equal AND shouldIncrementCycle false for non-wrapping transitions", () => {

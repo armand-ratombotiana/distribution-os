@@ -1,5 +1,8 @@
 # Distribution OS — State Machines
 
+> Runtime-status note: [CURRENT_STATE.md](CURRENT_STATE.md) is authoritative
+> where this document also describes planned adapters or workers.
+
 > Reference for every long-lived entity's state machine in Distribution
 > OS. Each machine is defined as code (in the `*-pure.ts` module) and
 > enforced by the runtime layer before any UPDATE.
@@ -91,7 +94,7 @@ terminal states.
 | --------------------------------------------- | ---------------------- |
 | `POST /api/actions/[action_id]/approve`       | `prepared → approved`  |
 | `POST /api/actions/[action_id]/reject`        | `prepared → rejected`  |
-| `POST /api/actions/[action_id]/execute`       | `approved → executed`  |
+| `POST /api/actions/[action_id]/execute`       | Fails closed with `501`; state remains `approved` until a real provider adapter is installed. |
 
 The `expired` transition is triggered by a sweep job (roadmap) when
 `expires_at < now`. The `failed` transition is triggered by the
@@ -99,10 +102,9 @@ adapter when a provider call returns a permanent error.
 
 ### Idempotency
 
-Every action has a deterministic `idempotency_key` =
-`${workspaceId}:${missionId}:${payloadHash}` (unique index). A second
-INSERT with the same key is rejected, preventing double-enqueue of the
-same payload.
+Every action has a deterministic application idempotency key. The enqueue
+path reuses an existing matching action, but the current schema does not yet
+enforce this with a unique database index under concurrency.
 
 ---
 

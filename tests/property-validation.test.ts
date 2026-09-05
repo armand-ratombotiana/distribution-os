@@ -119,7 +119,6 @@ test("property/validateString: boundary — strings of exactly minLength and exa
 // ─── 4. validateString required:false accepts null/undefined ──────────────
 
 test("property/validateString: required:false accepts null and undefined as empty string", () => {
-  const rng = mulberry32(204);
   for (let i = 0; i < SAMPLES; i++) {
     const r1 = validateString(null, { required: false });
     const r2 = validateString(undefined, { required: false });
@@ -133,7 +132,6 @@ test("property/validateString: required:false accepts null and undefined as empt
 // ─── 5. validateString required (default) rejects null/undefined ──────────
 
 test("property/validateString: required (default) rejects null and undefined", () => {
-  const rng = mulberry32(205);
   for (let i = 0; i < SAMPLES; i++) {
     assert.equal(validateString(null).ok, false);
     assert.equal(validateString(undefined).ok, false);

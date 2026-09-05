@@ -17,28 +17,18 @@ import { EmptyState } from "./empty-state";
 import { KpiCard, type KpiTrend } from "./kpi-card";
 
 export type DashboardSnapshot = {
-  workspace?: {
-    id: string;
-    display_name: string;
-    plan: string;
-  };
-  counts?: {
-    missions: number;
-    actions: number;
-    evidence: number;
-    payments: number;
-    contacts: number;
-    connectors: number;
-  };
-  trends?: {
-    missions?: KpiTrend;
-    actions?: KpiTrend;
-    evidence?: KpiTrend;
-    payments?: KpiTrend;
-  };
+  workspace_id?: string;
+  display_name?: string;
+  plan?: string;
+  mission_count?: number;
+  total_actions?: number;
+  total_evidence?: number;
+  succeeded_payment_count?: number;
   recent_activity?: AuditEventSummary[];
   error?: string;
 };
+
+type DashboardResponse = { dashboard?: DashboardSnapshot; error?: string };
 
 export type DashboardOverviewProps = {
   workspaceId: string;
@@ -68,10 +58,10 @@ export function DashboardOverview({ workspaceId, refreshKey }: DashboardOverview
         const response = await fetch(
           `/api/workspace/dashboard?workspace_id=${encodeURIComponent(workspaceId)}`,
         );
-        const data = (await response.json()) as DashboardSnapshot;
+        const data = (await response.json()) as DashboardResponse;
         if (cancelled) return;
         if (response.ok) {
-          setSnapshot(data);
+          setSnapshot(data.dashboard ?? null);
         } else {
           setError(data.error || "Dashboard unavailable");
         }
@@ -92,8 +82,8 @@ export function DashboardOverview({ workspaceId, refreshKey }: DashboardOverview
       const response = await fetch(
         `/api/workspace/dashboard?workspace_id=${encodeURIComponent(workspaceId)}`,
       );
-      const data = (await response.json()) as DashboardSnapshot;
-      if (response.ok) setSnapshot(data);
+      const data = (await response.json()) as DashboardResponse;
+      if (response.ok) setSnapshot(data.dashboard ?? null);
     } catch {
       // background reloads are non-fatal
     }
@@ -146,15 +136,13 @@ export function DashboardOverview({ workspaceId, refreshKey }: DashboardOverview
     );
   }
 
-  const counts = snapshot?.counts ?? {
-    missions: 0,
-    actions: 0,
-    evidence: 0,
-    payments: 0,
-    contacts: 0,
-    connectors: 0,
+  const counts = {
+    missions: snapshot?.mission_count ?? 0,
+    actions: snapshot?.total_actions ?? 0,
+    evidence: snapshot?.total_evidence ?? 0,
+    payments: snapshot?.succeeded_payment_count ?? 0,
   };
-  const trends = snapshot?.trends ?? {};
+  const trends: Record<string, KpiTrend | undefined> = {};
 
   return (
     <section className="dashboard-overview ws-panel" aria-live="polite">
@@ -164,8 +152,8 @@ export function DashboardOverview({ workspaceId, refreshKey }: DashboardOverview
             <Target /> Workspace dashboard
           </p>
           <h2>
-            {snapshot?.workspace?.display_name
-              ? `${snapshot.workspace.display_name} · ${snapshot.workspace.plan} plan`
+            {snapshot?.display_name
+              ? `${snapshot.display_name} · ${snapshot.plan} plan`
               : "Live KPIs and recent activity"}
           </h2>
           <p className="ws-panel-lede">

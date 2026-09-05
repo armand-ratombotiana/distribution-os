@@ -23,6 +23,7 @@ const patchSchema = z
     max_daily_actions: z.number().int().min(1).max(10_000).optional(),
     auto_approve_low_risk: z.boolean().optional(),
     brand_voice_json: z.string().max(10_000).optional(),
+    forbidden_claims: z.array(z.string().trim().min(1).max(500)).max(100).optional(),
   })
   .strict();
 
@@ -62,12 +63,16 @@ export async function PATCH(request: Request) {
   try {
     const workspace = await ensureWorkspace(requireRequestIdentity(request));
     const input = patchSchema.parse(await request.json());
+    const { forbidden_claims: forbiddenClaims, ...settingsInput } = input;
     const patch: UpdateSettingsPatch = {
-      ...input,
+      ...settingsInput,
       // The DB column stores auto_approve_low_risk as 0/1; the pure helper
       // expects a boolean so we keep the schema boolean here and let the
       // wrapper handle the integer coercion.
       auto_approve_low_risk: input.auto_approve_low_risk,
+      forbidden_claims_json: forbiddenClaims
+        ? JSON.stringify([...new Set(forbiddenClaims)])
+        : undefined,
     };
     const updated = await updateSettings(workspace.id, patch);
 

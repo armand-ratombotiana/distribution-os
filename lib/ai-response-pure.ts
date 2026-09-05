@@ -193,7 +193,6 @@ export function validateStructuredOutput(
       errors.push(`invalid spec for field "${field}"`);
       continue;
     }
-    const has = Object.prototype.hasOwnProperty.call(obj, field);
     const v = obj[field];
     if (v === undefined || v === null) {
       if (spec.required) {

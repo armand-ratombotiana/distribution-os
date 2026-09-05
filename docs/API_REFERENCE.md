@@ -1,5 +1,8 @@
 # Distribution OS — API Reference
 
+> Runtime-status note: [CURRENT_STATE.md](CURRENT_STATE.md) is authoritative
+> where this historical reference describes target-state or preview behavior.
+
 This document is the canonical reference for every HTTP endpoint exposed by
 Distribution OS. All routes live under `/api/*` and run on the Cloudflare
 Workers runtime. Routes that mutate state require a signed-in ChatGPT user;
@@ -174,8 +177,8 @@ Advances or approves the current mission.
 
 | `action`   | Effect                                                                                |
 | ---------- | ------------------------------------------------------------------------------------- |
-| `advance`  | Moves the mission to the next stage (`observe → decide → act → measure → learn → observe`). Increments `cycle_number` when wrapping from `learn` to `observe`. After advancing, a `mission_versions` row is written (best-effort) and an `audit_events` row with `event_type = "mission.advanced"`. |
-| `approve`  | Marks `approved = true`. After approval, an `audit_events` row with `event_category = "approval"`, `event_type = "mission.approved"` is written (best-effort). |
+| `advance`  | Attempts the next governed stage (`observe → decide → approve → act → measure → learn → observe`). Server-side readiness checks can return `409` until exact-action approval, provider-confirmed execution, or measurement evidence exists. |
+| `approve`  | Approves the next unexpired prepared action and records the caller identity; it does not execute the provider action. |
 
 **Response 200:** Same shape as `POST /api/mission`.
 
@@ -186,6 +189,7 @@ Advances or approves the current mission.
 | 400    | Body failed Zod validation (`mission_id` empty, unknown `action`).   |
 | 401    | Identity headers missing.                                             |
 | 404    | Mission does not exist in the caller's workspace.                     |
+| 409    | A lifecycle readiness gate or concurrent transition blocked advancement. |
 
 ---
 

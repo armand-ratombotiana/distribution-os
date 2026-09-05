@@ -117,7 +117,7 @@ export async function executeWorkflow<T = unknown>(
       error = `Workflow exceeded maxTransitions (${workflow.maxTransitions})`;
       break;
     }
-    const step = getStep(workflow, currentStepId);
+    const step: WorkflowStep<T> | undefined = getStep<T>(workflow, currentStepId);
     if (!step) {
       status = "failed";
       error = `Unknown step id: ${currentStepId}`;
@@ -132,7 +132,7 @@ export async function executeWorkflow<T = unknown>(
     }
 
     try {
-      const next = step.execute
+      const next: string | null = step.execute
         ? await step.execute({ outputs, env: state.context.env, currentStepId: step.id, visitedSteps })
         : null;
       if (next === null || next === undefined || step.kind === "end") {

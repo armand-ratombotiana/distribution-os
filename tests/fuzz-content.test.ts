@@ -195,7 +195,6 @@ test("fuzz/content: sanitizeForModel removes on* event handler attributes", () =
 // ─── 8. sanitizeForModel removes null bytes and ANSI escape sequences ─────
 
 test("fuzz/content: sanitizeForModel removes null bytes and ANSI escape sequences", () => {
-  const rng = mulberry32(508);
   for (let i = 0; i < SAMPLES; i++) {
     const input =
       "text\x00with\x00nulls\x1b[31mred\x1b[0m text\x1b]0;title\x07end";

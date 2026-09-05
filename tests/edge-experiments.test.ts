@@ -11,7 +11,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  EXPERIMENT_TRANSITIONS,
   canTransition,
   isTerminal,
   shouldKill,

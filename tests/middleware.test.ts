@@ -102,7 +102,7 @@ test("composeMiddleware throws when a middleware calls next() multiple times", a
     },
   ]);
   await assert.rejects(
-    () => composed({ request: {}, state: {} }, async () => {}),
+    async () => { await composed({ request: {}, state: {} }, async () => {}); },
     /next\(\) called multiple times/,
   );
 });

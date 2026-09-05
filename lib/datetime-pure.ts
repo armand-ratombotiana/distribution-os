@@ -158,9 +158,19 @@ export function getEndOfDay(value: DateInput): Date {
 
 /** Returns the number of whole calendar days between two dates. */
 export function getDaysBetween(start: DateInput, end: DateInput): number {
-  const startDate = getStartOfDay(start);
-  const endDate = getStartOfDay(end);
-  const diff = endDate.getTime() - startDate.getTime();
+  const startDate = toDate(start);
+  const endDate = toDate(end);
+  const startUtc = Date.UTC(
+    startDate.getUTCFullYear(),
+    startDate.getUTCMonth(),
+    startDate.getUTCDate(),
+  );
+  const endUtc = Date.UTC(
+    endDate.getUTCFullYear(),
+    endDate.getUTCMonth(),
+    endDate.getUTCDate(),
+  );
+  const diff = endUtc - startUtc;
   return Math.round(diff / DAY_MS);
 }
 

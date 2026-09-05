@@ -1,7 +1,7 @@
 import { EXPERIMENT_STATUSES, EXPERIMENT_DECISIONS } from "./schema";
 
-type ExperimentStatus = (typeof EXPERIMENT_STATUSES)[number];
-type ExperimentDecision = (typeof EXPERIMENT_DECISIONS)[number];
+export type ExperimentStatus = (typeof EXPERIMENT_STATUSES)[number];
+export type ExperimentDecision = (typeof EXPERIMENT_DECISIONS)[number];
 
 export type ExperimentRow = {
   id: string;

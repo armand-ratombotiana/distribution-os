@@ -50,14 +50,10 @@ export async function ensureWorkspace(identity: RequestIdentity) {
 
   const now = Date.now();
   const workspaceId = `ws_${crypto.randomUUID()}`;
-  await db.batch([
-    db
-      .prepare("INSERT INTO workspaces (id, owner_user_id, owner_email, display_name, plan, created_at, updated_at) VALUES (?, ?, ?, ?, 'founder', ?, ?)")
-      .bind(workspaceId, identity.userId, identity.email, identity.displayName, now, now),
-    db
-      .prepare("UPDATE missions SET workspace_id = ? WHERE workspace_id IS NULL")
-      .bind(workspaceId),
-  ]);
+  await db
+    .prepare("INSERT INTO workspaces (id, owner_user_id, owner_email, display_name, plan, created_at, updated_at) VALUES (?, ?, ?, ?, 'founder', ?, ?)")
+    .bind(workspaceId, identity.userId, identity.email, identity.displayName, now, now)
+    .run();
   return (await db.prepare("SELECT * FROM workspaces WHERE id = ? LIMIT 1").bind(workspaceId).first<Workspace>())!;
 }
 

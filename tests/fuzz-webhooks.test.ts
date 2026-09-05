@@ -312,7 +312,7 @@ test("fuzz/webhooks: random byte-sequence headers never crash verifyStripeSignat
     });
     // Whatever the decision, it must be one of the known reasons or valid.
     assert.ok(
-      valid === true ||
+      Boolean(valid) ||
       ["malformed_header", "expired", "future_dated", "signature_mismatch"].includes(reason as string),
       `unexpected reason: ${reason}`,
     );

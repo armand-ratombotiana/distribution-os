@@ -27,6 +27,9 @@ type RouteContext = {
 export async function POST(request: Request, context: RouteContext) {
   try {
     const { provider } = await context.params;
+    if (provider.toLowerCase() !== "stripe") {
+      return Response.json({ error: "Unsupported webhook provider." }, { status: 404 });
+    }
     const signatureHeader = request.headers.get("stripe-signature") ?? "";
     const rawBody = await request.text();
 
@@ -66,35 +69,45 @@ export async function POST(request: Request, context: RouteContext) {
     const eventId =
       typeof payload.id === "string" ? payload.id : crypto.randomUUID();
 
-    // Extract the workspace id from the event payload. Stripe does not know
-    // about Distribution OS workspaces, so we require integrators to attach
-    // the workspace id as `workspace_id` metadata on the source object. When
-    // absent, the payment is recorded under a synthetic "unattributed" tenant
-    // so the event is still observable in the audit log.
-    const workspaceId =
-      readWorkspaceIdFromPayload(payload) ?? "ws_unattributed";
+    // Stripe does not know Distribution OS tenancy, so the integration must
+    // copy workspace_id into metadata on every relevant source object. Missing
+    // tenancy is rejected rather than assigned to a synthetic shared tenant.
+    const workspaceId = readMetadataValue(payload, "workspace_id");
+    if (!workspaceId) {
+      return Response.json(
+        { error: "Stripe object metadata.workspace_id is required." },
+        { status: 400 },
+      );
+    }
 
-    if (eventClass === "payment") {
+    const recordsPayment =
+      ["payment", "refund", "dispute", "invoice"].includes(eventClass) ||
+      eventType === "checkout.session.completed";
+    if (recordsPayment) {
       const amountCents = readAmountCents(payload);
       const currency = readCurrency(payload);
       const providerPaymentId = readProviderPaymentId(payload);
       const status = readPaymentStatus(eventType);
       if (providerPaymentId && amountCents !== null) {
-        try {
-          await recordPayment(workspaceId, {
-            provider,
-            provider_payment_id: providerPaymentId,
-            amount_cents: amountCents,
-            currency,
-            status,
-            raw_event: payload,
-            received_at: Date.now(),
-          });
-        } catch {
-          // Recording the payment must never block the webhook
-          // acknowledgement — Stripe retries failed deliveries, so a transient
-          // D1 error should still return 200 to stop the retry storm.
-        }
+        await recordPayment(workspaceId, {
+          mission_id: readMetadataValue(payload, "mission_id"),
+          action_id: readMetadataValue(payload, "action_id"),
+          experiment_id: readMetadataValue(payload, "experiment_id"),
+          provider,
+          provider_payment_id: providerPaymentId,
+          amount_cents: amountCents,
+          currency,
+          status,
+          attribution_confidence: readMetadataValue(payload, "action_id")
+            ? 100
+            : readMetadataValue(payload, "mission_id")
+              ? 70
+              : 0,
+          attributed_at: readMetadataValue(payload, "mission_id") ? Date.now() : null,
+          raw_event: payload,
+          received_at: Date.now(),
+        });
+        // Persistence failures intentionally bubble so Stripe can retry.
       }
     }
 
@@ -128,8 +141,8 @@ export async function POST(request: Request, context: RouteContext) {
   }
 }
 
-function readWorkspaceIdFromPayload(payload: Record<string, unknown>): string | null {
-  const direct = payload.workspace_id;
+function readMetadataValue(payload: Record<string, unknown>, key: string): string | null {
+  const direct = payload[key];
   if (typeof direct === "string" && direct.trim()) return direct.trim();
   const data = payload.data;
   if (data && typeof data === "object") {
@@ -140,9 +153,9 @@ function readWorkspaceIdFromPayload(payload: Record<string, unknown>): string | 
       const meta = objectRecord.metadata;
       if (meta && typeof meta === "object") {
         const metaRecord = meta as Record<string, unknown>;
-        const metaWorkspace = metaRecord.workspace_id;
-        if (typeof metaWorkspace === "string" && metaWorkspace.trim()) {
-          return metaWorkspace.trim();
+        const value = metaRecord[key];
+        if (typeof value === "string" && value.trim()) {
+          return value.trim();
         }
       }
     }
@@ -164,6 +177,18 @@ function readAmountCents(payload: Record<string, unknown>): number | null {
   const amountReceived = objectRecord.amount_received;
   if (typeof amountReceived === "number" && Number.isFinite(amountReceived)) {
     return Math.floor(amountReceived);
+  }
+  const amountPaid = objectRecord.amount_paid;
+  if (typeof amountPaid === "number" && Number.isFinite(amountPaid)) {
+    return Math.floor(amountPaid);
+  }
+  const amountTotal = objectRecord.amount_total;
+  if (typeof amountTotal === "number" && Number.isFinite(amountTotal)) {
+    return Math.floor(amountTotal);
+  }
+  const amountRefunded = objectRecord.amount_refunded;
+  if (typeof amountRefunded === "number" && Number.isFinite(amountRefunded)) {
+    return Math.floor(amountRefunded);
   }
   return null;
 }

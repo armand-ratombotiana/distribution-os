@@ -11,7 +11,6 @@ import {
   validateUuid,
   validateDateRange,
   validateJsonString,
-  sanitizeString,
   sanitizeHtml,
   truncate,
   slugify,

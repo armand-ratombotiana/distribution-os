@@ -64,12 +64,13 @@ export type MissionDetailProps = {
   refreshKey?: number;
 };
 
-const STAGE_ORDER = ["observe", "decide", "act", "measure", "learn"] as const;
+const STAGE_ORDER = ["observe", "decide", "approve", "act", "measure", "learn"] as const;
 type Stage = (typeof STAGE_ORDER)[number];
 
 const stageLabel: Record<Stage, string> = {
   observe: "Observe",
   decide: "Decide",
+  approve: "Approve",
   act: "Act",
   measure: "Measure",
   learn: "Learn",

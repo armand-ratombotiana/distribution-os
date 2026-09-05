@@ -55,7 +55,13 @@ export async function enqueueAction(
   const db = getRawDb();
   const now = Date.now();
   const payloadJson = canonicalJson(input.payload);
-  const payloadHash = await hashPayload(input.payload);
+  const payloadHash = await hashPayload({
+    action_type: input.action_type,
+    channel: input.channel,
+    title: input.title,
+    summary: input.summary,
+    payload: input.payload,
+  });
   const idempotencyKey = buildIdempotencyKey(
     workspaceId,
     input.mission_id,
@@ -64,9 +70,19 @@ export async function enqueueAction(
   const id = `act_${crypto.randomUUID()}`;
   const risk: ActionRisk = input.risk ?? "medium";
 
+  const existing = await db
+    .prepare(
+      "SELECT * FROM action_queue WHERE workspace_id = ? AND idempotency_key = ? ORDER BY created_at ASC LIMIT 1",
+    )
+    .bind(workspaceId, idempotencyKey)
+    .first<ActionRow>();
+  if (existing) {
+    return existing;
+  }
+
   await db
     .prepare(
-      "INSERT INTO action_queue (id, workspace_id, mission_id, action_type, channel, title, summary, payload_json, payload_hash, risk, status, blocker, decided_by, decided_at, expires_at, idempotency_key, provider_request_json, provider_result_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'prepared', ?, NULL, NULL, ?, ?, ?, ?, ?, ?) ON CONFLICT(idempotency_key) DO UPDATE SET updated_at = excluded.updated_at, expires_at = excluded.expires_at, risk = excluded.risk",
+      "INSERT INTO action_queue (id, workspace_id, mission_id, action_type, channel, title, summary, payload_json, payload_hash, risk, status, blocker, decided_by, decided_at, expires_at, idempotency_key, provider_request_json, provider_result_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'prepared', ?, NULL, NULL, ?, ?, ?, ?, ?, ?)",
     )
     .bind(
       id,
@@ -198,6 +214,10 @@ async function transitionAction(
   const current = await getAction(workspaceId, actionId);
   if (!current) {
     throw new Error(`Action not found: ${actionId}`);
+  }
+  if (to !== "expired" && current.expires_at <= Date.now()) {
+    await transitionAction(workspaceId, actionId, "expired", "system:expiry");
+    throw new Error(`Action ${actionId} has expired and cannot be approved`);
   }
   if (!canTransition(current.status, to)) {
     throw new Error(

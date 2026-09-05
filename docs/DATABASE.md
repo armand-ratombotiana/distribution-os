@@ -1,5 +1,8 @@
 # Distribution OS — Database Schema Reference
 
+> Runtime-status note: [CURRENT_STATE.md](CURRENT_STATE.md) is authoritative
+> for which schema capabilities are exercised by the golden path.
+
 > Canonical column-by-column reference for every D1 table in
 > Distribution OS. Includes indexes, foreign-key relationships, and
 > the migration guide.

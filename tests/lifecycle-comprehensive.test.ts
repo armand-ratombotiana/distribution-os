@@ -39,13 +39,14 @@ const baseSnapshot: MissionStateSnapshot = {
 
 // ─── STAGE_ORDER + STAGE_TRANSITIONS ──────────────────────────────────────
 
-test("lifecycle/STAGE_ORDER: has 5 stages in correct order", () => {
-  assert.deepEqual([...STAGE_ORDER], ["observe", "decide", "act", "measure", "learn"]);
+test("lifecycle/STAGE_ORDER: has 6 stages in correct order", () => {
+  assert.deepEqual([...STAGE_ORDER], ["observe", "decide", "approve", "act", "measure", "learn"]);
 });
 
 test("lifecycle/STAGE_TRANSITIONS: maps each stage to its successor (learn wraps to observe)", () => {
   assert.equal(STAGE_TRANSITIONS.observe, "decide");
-  assert.equal(STAGE_TRANSITIONS.decide, "act");
+  assert.equal(STAGE_TRANSITIONS.decide, "approve");
+  assert.equal(STAGE_TRANSITIONS.approve, "act");
   assert.equal(STAGE_TRANSITIONS.act, "measure");
   assert.equal(STAGE_TRANSITIONS.measure, "learn");
   assert.equal(STAGE_TRANSITIONS.learn, "observe");
@@ -55,7 +56,8 @@ test("lifecycle/STAGE_TRANSITIONS: maps each stage to its successor (learn wraps
 
 test("lifecycle/getNextStage: returns the correct successor for each canonical stage", () => {
   assert.equal(getNextStage("observe"), "decide");
-  assert.equal(getNextStage("decide"), "act");
+  assert.equal(getNextStage("decide"), "approve");
+  assert.equal(getNextStage("approve"), "act");
   assert.equal(getNextStage("act"), "measure");
   assert.equal(getNextStage("measure"), "learn");
   assert.equal(getNextStage("learn"), "observe");
@@ -80,6 +82,7 @@ test("lifecycle/getStageDescription: returns a non-empty description for each ca
   // Spot-check that the descriptions mention the right concept.
   assert.match(getStageDescription("observe"), /intelligence|evidence/i);
   assert.match(getStageDescription("decide"), /rank|hypothesis|experiment/i);
+  assert.match(getStageDescription("approve"), /human|approve|action/i);
   assert.match(getStageDescription("act"), /action|approval/i);
   assert.match(getStageDescription("measure"), /measurement|window|signal/i);
   assert.match(getStageDescription("learn"), /hypothesis|kill rule|cycle/i);
@@ -105,11 +108,11 @@ test("lifecycle/shouldIncrementCycle: true only for learn → observe (the wrap-
 
 // ─── isStageCompleteable ──────────────────────────────────────────────────
 
-test("lifecycle/isStageCompleteable: gates the act stage on approval; non-gated stages always completeable", () => {
-  const unapproved = { ...baseSnapshot, current_stage: "act", approved: false };
-  assert.equal(isStageCompleteable("act", unapproved), false);
-  const approved = { ...baseSnapshot, current_stage: "act", approved: true };
-  assert.equal(isStageCompleteable("act", approved), true);
+test("lifecycle/isStageCompleteable: gates the approve stage on approval; non-gated stages always completeable", () => {
+  const unapproved = { ...baseSnapshot, current_stage: "approve", approved: false };
+  assert.equal(isStageCompleteable("approve", unapproved), false);
+  const approved = { ...baseSnapshot, current_stage: "approve", approved: true };
+  assert.equal(isStageCompleteable("approve", approved), true);
 
   // Non-act stages do not depend on approval.
   for (const stage of ["observe", "decide", "measure", "learn"] as const) {
@@ -124,9 +127,9 @@ test("lifecycle/isStageCompleteable: gates the act stage on approval; non-gated 
 
 // ─── getMissionReadiness ──────────────────────────────────────────────────
 
-test("lifecycle/getMissionReadiness: blocks when act is not approved and requires approval", () => {
-  const mission = { ...baseSnapshot, current_stage: "act", approved: false };
-  const readiness = getMissionReadiness(mission);
+test("lifecycle/getMissionReadiness: blocks until an exact action is approved", () => {
+  const mission = { ...baseSnapshot, current_stage: "approve", approved: false };
+  const readiness = getMissionReadiness(mission, { pendingApprovals: 1 });
   assert.equal(readiness.can_advance, false);
   assert.equal(readiness.requires_approval, true);
   assert.ok(readiness.blocking_reasons.length >= 1);
@@ -136,22 +139,22 @@ test("lifecycle/getMissionReadiness: blocks when act is not approved and require
 test("lifecycle/getMissionReadiness: blocks measure when no open experiments; surfaces pending approvals", () => {
   const measure = { ...baseSnapshot, current_stage: "measure" };
   // No open experiments → blocked.
-  const r1 = getMissionReadiness(measure, { openExperiments: 0 });
+  const r1 = getMissionReadiness(measure, { openExperiments: 0, measurementSignals: 0 });
   assert.equal(r1.can_advance, false);
   assert.ok(r1.blocking_reasons.some((b) => /experiment/i.test(b)));
 
   // With open experiments, advance is allowed.
-  const r2 = getMissionReadiness(measure, { openExperiments: 1 });
+  const r2 = getMissionReadiness(measure, { openExperiments: 1, measurementSignals: 1 });
   assert.equal(r2.can_advance, true);
 
   // Pending approvals always block.
   const r3 = getMissionReadiness(
-    { ...baseSnapshot, current_stage: "observe" },
+    { ...baseSnapshot, current_stage: "approve" },
     { pendingApprovals: 2 },
   );
   assert.equal(r3.can_advance, false);
   assert.equal(r3.requires_approval, true);
-  assert.ok(r3.blocking_reasons.some((b) => /2 approval/i.test(b)));
+  assert.ok(r3.blocking_reasons.some((b) => /2 .*approval/i.test(b)));
 });
 
 test("lifecycle/getMissionReadiness: readiness_score = 100 - 25 * (blocking_reasons.length) and is 100 when unblocked", () => {
@@ -164,15 +167,15 @@ test("lifecycle/getMissionReadiness: readiness_score = 100 - 25 * (blocking_reas
 
   // One blocker → 75. (act-not-approved only)
   const one = getMissionReadiness(
-    { ...baseSnapshot, current_stage: "act", approved: false },
+    { ...baseSnapshot, current_stage: "approve", approved: false },
   );
   assert.equal(one.blocking_reasons.length, 1);
   assert.equal(one.readiness_score, 75);
 
   // Two blockers → 50. (act-not-approved + pendingApprovals)
   const two = getMissionReadiness(
-    { ...baseSnapshot, current_stage: "act", approved: false },
-    { pendingApprovals: 3 },
+    { ...baseSnapshot, current_stage: "measure" },
+    { openExperiments: 0, measurementSignals: 0 },
   );
   assert.equal(two.blocking_reasons.length, 2);
   assert.equal(two.readiness_score, 50);
@@ -181,7 +184,7 @@ test("lifecycle/getMissionReadiness: readiness_score = 100 - 25 * (blocking_reas
   // The measure-stage blocker fires when openExperiments === 0.
   const three = getMissionReadiness(
     { ...baseSnapshot, current_stage: "measure" },
-    { pendingApprovals: 3, openExperiments: 0 },
+    { openExperiments: 0, measurementSignals: 0 },
   );
   assert.equal(three.blocking_reasons.length, 2);
   assert.equal(three.readiness_score, 50);
@@ -202,7 +205,7 @@ test("lifecycle/getMissionProgress: returns <100 (and >0) when no payment; scale
   assert.ok(p1 > 0 && p1 < 100);
   assert.ok(p5 > 0 && p5 < 100);
   assert.ok(p5 > p1, "later stage should report higher progress");
-  assert.equal(p1, 20); // (1/5)*100
+  assert.equal(p1, 17); // rounded (1/6)*100
   // learn (index 4) → (5/5)*100 = 100, but capped at 99 (no payment yet).
   assert.equal(p5, 99);
   // Unknown stage → 0.
@@ -214,16 +217,16 @@ test("lifecycle/getMissionProgress: returns <100 (and >0) when no payment; scale
 
 // ─── shouldAutoAdvance ────────────────────────────────────────────────────
 
-test("lifecycle/shouldAutoAdvance: false on pendingApprovals, false on act-not-approved, false on measure-no-experiments, false on payment received", () => {
+test("lifecycle/shouldAutoAdvance: enforces approval, execution, measurement and payment gates", () => {
   // Pending approvals block advance.
   assert.equal(
-    shouldAutoAdvance(baseSnapshot, { pendingApprovals: 1 }),
+    shouldAutoAdvance({ ...baseSnapshot, current_stage: "approve" }, { pendingApprovals: 1 }),
     false,
   );
   // act without approval blocks advance.
   assert.equal(
     shouldAutoAdvance(
-      { ...baseSnapshot, current_stage: "act", approved: false },
+      { ...baseSnapshot, current_stage: "approve", approved: false },
       {},
     ),
     false,
@@ -232,7 +235,7 @@ test("lifecycle/shouldAutoAdvance: false on pendingApprovals, false on act-not-a
   assert.equal(
     shouldAutoAdvance(
       { ...baseSnapshot, current_stage: "measure" },
-      { openExperiments: 0 },
+      { openExperiments: 0, measurementSignals: 0 },
     ),
     false,
   );
@@ -252,8 +255,8 @@ test("lifecycle/shouldAutoAdvance: false on pendingApprovals, false on act-not-a
   // act with approval and no other blockers → true.
   assert.equal(
     shouldAutoAdvance(
-      { ...baseSnapshot, current_stage: "act", approved: true },
-      {},
+      { ...baseSnapshot, current_stage: "approve", approved: true },
+      { approvedActions: 1 },
     ),
     true,
   );

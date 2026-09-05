@@ -3,8 +3,55 @@ import {
   getMissionReadiness,
   type MissionStateSnapshot,
 } from "../lib/mission-lifecycle-pure";
+import { createExperiment } from "./experiments";
+import { createContentAsset } from "./content-assets";
+import { enqueueAction } from "./actions";
+import { createMissionVersion, createStrategyVersion } from "./versions";
+import { calculateCost } from "./agent-runs-pure";
+import { createEvidence } from "./evidence";
 
 export type MissionMode = "simulation" | "live";
+
+export type MissionDocument = Record<string, unknown> & {
+  mission_id: string;
+  product_name: string;
+  executive_thesis?: string;
+  strategy?: Record<string, unknown> & { primary_channel?: string };
+  assumptions?: Array<{
+    statement: string;
+    confidence?: number;
+    evidence_needed: string;
+  }>;
+  experiments?: Array<{
+    title: string;
+    hypothesis: string;
+    action: string;
+    metric: string;
+    kill_rule: string;
+  }>;
+  content_queue?: Array<{
+    platform: string;
+    format: string;
+    hook: string;
+    cta: string;
+  }>;
+};
+
+export type MissionRunMetadata = {
+  model: string;
+  prompt_version: string;
+  started_at: number;
+  completed_at: number;
+  tokens_input?: number;
+  tokens_output?: number;
+};
+
+export type MissionWebsiteEvidence = {
+  source_url: string;
+  title: string;
+  summary: string;
+  content: unknown;
+};
 
 export type MissionSummary = {
   mission_id: string;
@@ -83,19 +130,28 @@ async function readEvents(missionId: string) {
 }
 
 export async function saveMission(args: {
-  mission: Record<string, unknown> & { mission_id: string; product_name: string };
+  mission: MissionDocument;
   mode: MissionMode;
   websiteUrl: string;
   workspaceId: string;
+  run: MissionRunMetadata;
+  websiteEvidence?: MissionWebsiteEvidence;
 }) {
   const db = getRawDb();
   const now = Date.now();
   const missionJson = JSON.stringify(args.mission);
 
+  const runId = `run_${crypto.randomUUID()}`;
+  const stepId = `step_${crypto.randomUUID()}`;
+  const tokensInput = Math.max(0, Math.floor(args.run.tokens_input ?? 0));
+  const tokensOutput = Math.max(0, Math.floor(args.run.tokens_output ?? 0));
+  const runCostCents = calculateCost(args.run.model, tokensInput, tokensOutput);
+  const runLatencyMs = Math.max(0, args.run.completed_at - args.run.started_at);
+
   await db.batch([
     db
       .prepare(
-        "INSERT INTO missions (id, workspace_id, website_url, product_name, mode, status, current_stage, cycle_number, payment_count, approved, mission_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'learning', 'observe', 1, 0, 0, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET workspace_id = excluded.workspace_id, website_url = excluded.website_url, product_name = excluded.product_name, mode = excluded.mode, mission_json = excluded.mission_json, updated_at = excluded.updated_at"
+        "INSERT INTO missions (id, workspace_id, website_url, product_name, mode, status, current_stage, cycle_number, payment_count, approved, mission_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'learning', 'observe', 1, 0, 0, ?, ?, ?)"
       )
       .bind(
         args.mission.mission_id,
@@ -121,7 +177,150 @@ export async function saveMission(args: {
         "INSERT INTO mission_events (mission_id, event_type, title, detail, actor, created_at) VALUES (?, 'decision', 'Initial strategy synthesized', 'ICP, offer, channel hypothesis and falsifiable experiments are ready for execution.', 'AI CMO', ?)"
       )
       .bind(args.mission.mission_id, now + 1),
+    db
+      .prepare(
+        "INSERT INTO agent_runs (id, workspace_id, mission_id, agent_name, prompt_version, model, status, input_refs_json, output_refs_json, tokens_input, tokens_output, cost_cents, latency_ms, error, started_at, completed_at, created_at) VALUES (?, ?, ?, 'AI CMO Mission Bootstrap', ?, ?, 'completed', ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)",
+      )
+      .bind(
+        runId,
+        args.workspaceId,
+        args.mission.mission_id,
+        args.run.prompt_version,
+        args.run.model,
+        JSON.stringify([args.websiteUrl]),
+        JSON.stringify([`mission:${args.mission.mission_id}`]),
+        tokensInput,
+        tokensOutput,
+        runCostCents,
+        runLatencyMs,
+        args.run.started_at,
+        args.run.completed_at,
+        now,
+      ),
+    db
+      .prepare(
+        "INSERT INTO agent_steps (id, run_id, step_index, tool_name, tool_input_json, tool_output_json, status, started_at, completed_at, created_at) VALUES (?, ?, 0, ?, ?, ?, 'completed', ?, ?, ?)",
+      )
+      .bind(
+        stepId,
+        runId,
+        args.mode === "live" ? "openai.responses" : "deterministic.simulation",
+        JSON.stringify({ website_url: args.websiteUrl, untrusted_external_content: true }),
+        JSON.stringify({ mission_id: args.mission.mission_id, validated: true }),
+        args.run.started_at,
+        args.run.completed_at,
+        now,
+      ),
   ]);
+
+  try {
+    if (args.websiteEvidence) {
+      await createEvidence(args.workspaceId, {
+        mission_id: args.mission.mission_id,
+        source_url: args.websiteEvidence.source_url,
+        source_type: "website",
+        title: args.websiteEvidence.title,
+        summary: args.websiteEvidence.summary,
+        content: args.websiteEvidence.content,
+        extracted_facts: {
+          title: args.websiteEvidence.title,
+          source_url: args.websiteEvidence.source_url,
+        },
+        provenance: { fetched_at: now, parser_version: "1.0" },
+      });
+    }
+
+    for (const [index, assumption] of (args.mission.assumptions ?? []).entries()) {
+      await createEvidence(args.workspaceId, {
+        mission_id: args.mission.mission_id,
+        source_type: "manual",
+        title: `Mission assumption ${index + 1}`,
+        summary: assumption.statement,
+        content: assumption,
+        extracted_facts: {
+          statement: assumption.statement,
+          confidence: assumption.confidence ?? 0,
+          evidence_needed: assumption.evidence_needed,
+        },
+        provenance: { source: "mission_synthesis", agent_run_id: runId },
+        state: "inferred",
+        parser_version: args.run.prompt_version,
+      });
+    }
+    await createMissionVersion(args.workspaceId, {
+      mission_id: args.mission.mission_id,
+      mission: args.mission,
+      change_reason: "Initial mission created from website evidence.",
+      created_by: "AI CMO",
+    });
+
+    if (args.mission.strategy) {
+      const confidences = (args.mission.assumptions ?? [])
+        .map((item) => item.confidence)
+        .filter((value): value is number => typeof value === "number");
+      const confidence = confidences.length
+        ? Math.round(confidences.reduce((sum, value) => sum + value, 0) / confidences.length)
+        : 0;
+      await createStrategyVersion(args.workspaceId, {
+        mission_id: args.mission.mission_id,
+        strategy: args.mission.strategy,
+        hypothesis: args.mission.executive_thesis ?? "Initial website-derived strategy hypothesis.",
+        confidence,
+        change_reason: "Initial strategy derived from website evidence.",
+        created_by: "AI CMO",
+      });
+    }
+
+    for (const experiment of args.mission.experiments ?? []) {
+      await createExperiment(args.workspaceId, {
+        mission_id: args.mission.mission_id,
+        title: experiment.title,
+        hypothesis: experiment.hypothesis,
+        metric: experiment.metric,
+        kill_rule: experiment.kill_rule,
+        variant: experiment.action,
+        deadline: now + 7 * 24 * 60 * 60 * 1000,
+        strategy_version: 1,
+      });
+    }
+
+    for (const asset of args.mission.content_queue ?? []) {
+      await createContentAsset(args.workspaceId, {
+        mission_id: args.mission.mission_id,
+        platform: asset.platform,
+        format: asset.format,
+        hook: asset.hook,
+        body: `${asset.hook}\n\n${asset.cta}`,
+        cta: asset.cta,
+      });
+    }
+
+    const firstAsset = args.mission.content_queue?.[0];
+    if (firstAsset) {
+      await enqueueAction(args.workspaceId, {
+        mission_id: args.mission.mission_id,
+        action_type: "publish_content",
+        channel: firstAsset.platform,
+        title: `Publish ${firstAsset.format}`,
+        summary: firstAsset.hook,
+        payload: {
+          platform: firstAsset.platform,
+          format: firstAsset.format,
+          body: `${firstAsset.hook}\n\n${firstAsset.cta}`,
+          cta: firstAsset.cta,
+        },
+        risk: "medium",
+        expires_at: now + 7 * 24 * 60 * 60 * 1000,
+        blocker: "A healthy authorized provider connector is required before execution.",
+      });
+    }
+  } catch (error) {
+    await db
+      .prepare("DELETE FROM missions WHERE id = ? AND workspace_id = ?")
+      .bind(args.mission.mission_id, args.workspaceId)
+      .run();
+    throw error;
+  }
 
   return getMission(args.mission.mission_id, args.workspaceId);
 }
@@ -160,7 +359,7 @@ export async function getLatestMission(workspaceId: string) {
   };
 }
 
-const stages = ["observe", "decide", "act", "measure", "learn"] as const;
+const stages = ["observe", "decide", "approve", "act", "measure", "learn"] as const;
 
 export async function advanceMission(missionId: string, workspaceId: string) {
   const db = getRawDb();
@@ -170,59 +369,105 @@ export async function advanceMission(missionId: string, workspaceId: string) {
     .first<MissionRow>();
   if (!row) return null;
 
+  const [pending, approved, executed, openExperiments, measurementSignals] =
+    await Promise.all([
+      db.prepare("SELECT COUNT(*) AS count FROM action_queue WHERE workspace_id = ? AND mission_id = ? AND status = 'prepared'").bind(workspaceId, missionId).first<{ count: number }>(),
+      db.prepare("SELECT COUNT(*) AS count FROM action_queue WHERE workspace_id = ? AND mission_id = ? AND status = 'approved'").bind(workspaceId, missionId).first<{ count: number }>(),
+      db.prepare("SELECT COUNT(*) AS count FROM action_queue WHERE workspace_id = ? AND mission_id = ? AND status = 'executed'").bind(workspaceId, missionId).first<{ count: number }>(),
+      db.prepare("SELECT COUNT(*) AS count FROM experiments WHERE workspace_id = ? AND mission_id = ? AND status IN ('draft', 'running')").bind(workspaceId, missionId).first<{ count: number }>(),
+      db.prepare("SELECT (SELECT COUNT(*) FROM touchpoints WHERE workspace_id = ? AND mission_id = ?) + (SELECT COUNT(*) FROM payments WHERE workspace_id = ? AND mission_id = ?) + (SELECT COUNT(*) FROM evidence WHERE workspace_id = ? AND mission_id = ? AND source_type != 'website') AS count").bind(workspaceId, missionId, workspaceId, missionId, workspaceId, missionId).first<{ count: number }>(),
+    ]);
+  const readiness = getMissionReadiness(stateFromRow(row), {
+    pendingApprovals: pending?.count ?? 0,
+    approvedActions: approved?.count ?? 0,
+    executedActions: executed?.count ?? 0,
+    openExperiments: openExperiments?.count ?? 0,
+    measurementSignals: measurementSignals?.count ?? 0,
+  });
+  if (!readiness.can_advance) {
+    throw new Error(`MISSION_BLOCKED: ${readiness.blocking_reasons.join(" ")}`);
+  }
+
   const position = stages.indexOf(row.current_stage as (typeof stages)[number]);
   const nextStage = stages[(position < 0 ? 0 : position + 1) % stages.length];
   const nextCycle = nextStage === "observe" ? row.cycle_number + 1 : row.cycle_number;
   const now = Date.now();
   const detailByStage: Record<string, string> = {
     decide: "The orchestrator ranked the next experiment against mission evidence and the first-payment objective.",
+    approve: "An exact proposed action is waiting at the human approval boundary.",
     act: "The next safe internal action is prepared. External publication, outreach and spend remain approval-gated.",
     measure: "The revenue analyst opened the measurement window and is waiting for attributable channel signals.",
     learn: "The evidence ledger is being compared with the hypothesis and its kill rule.",
     observe: "A new learning cycle started with the latest retained mission evidence.",
   };
 
-  await db.batch([
-    db
-      .prepare(
-        "UPDATE missions SET current_stage = ?, cycle_number = ?, updated_at = ? WHERE id = ? AND workspace_id = ?"
-      )
-      .bind(nextStage, nextCycle, now, missionId, workspaceId),
-    db
-      .prepare(
-        "INSERT INTO mission_events (mission_id, event_type, title, detail, actor, created_at) VALUES (?, 'loop', ?, ?, 'AI CMO', ?)"
-      )
-      .bind(
-        missionId,
-        `${nextStage[0].toUpperCase()}${nextStage.slice(1)} stage entered`,
-        detailByStage[nextStage],
-        now
-      ),
-  ]);
+  const transition = await db
+    .prepare(
+      "UPDATE missions SET current_stage = ?, cycle_number = ?, updated_at = ? WHERE id = ? AND workspace_id = ? AND current_stage = ? AND cycle_number = ?"
+    )
+    .bind(nextStage, nextCycle, now, missionId, workspaceId, row.current_stage, row.cycle_number)
+    .run();
+  if ((transition.meta.changes ?? 0) === 0) {
+    throw new Error("MISSION_BLOCKED: Mission state changed concurrently; refresh and retry.");
+  }
+  await db
+    .prepare(
+      "INSERT INTO mission_events (mission_id, event_type, title, detail, actor, created_at) VALUES (?, 'loop', ?, ?, 'AI CMO', ?)"
+    )
+    .bind(
+      missionId,
+      `${nextStage[0].toUpperCase()}${nextStage.slice(1)} stage entered`,
+      detailByStage[nextStage],
+      now
+    )
+    .run();
 
   return getMission(missionId, workspaceId);
 }
 
-export async function approveMission(missionId: string, workspaceId: string) {
+export async function approveMission(
+  missionId: string,
+  workspaceId: string,
+  decidedBy = "Human operator",
+) {
   const db = getRawDb();
   const row = await db
     .prepare("SELECT * FROM missions WHERE id = ? AND workspace_id = ? LIMIT 1")
     .bind(missionId, workspaceId)
     .first<MissionRow>();
   if (!row) return null;
-  if (row.approved) return getMission(missionId, workspaceId);
-
   const now = Date.now();
-  await db.batch([
+  await db
+    .prepare("UPDATE action_queue SET status = 'expired', updated_at = ? WHERE workspace_id = ? AND mission_id = ? AND status = 'prepared' AND expires_at <= ?")
+    .bind(now, workspaceId, missionId, now)
+    .run();
+  const preparedAction = await db
+    .prepare("SELECT id FROM action_queue WHERE workspace_id = ? AND mission_id = ? AND status = 'prepared' AND expires_at > ? ORDER BY created_at ASC LIMIT 1")
+    .bind(workspaceId, missionId, now)
+    .first<{ id: string }>();
+  if (row.approved && !preparedAction) return getMission(missionId, workspaceId);
+  if (!preparedAction) {
+    throw new Error("MISSION_BLOCKED: No unexpired prepared action is available for approval.");
+  }
+
+  const statements = [
     db
       .prepare("UPDATE missions SET approved = 1, updated_at = ? WHERE id = ? AND workspace_id = ?")
       .bind(now, missionId, workspaceId),
     db
       .prepare(
-        "INSERT INTO mission_events (mission_id, event_type, title, detail, actor, created_at) VALUES (?, 'approval', 'External action approved', 'The next reviewed distribution batch may be released after its destination account is connected. This does not authorize spend or payment configuration.', 'Human operator', ?)"
+        "INSERT INTO mission_events (mission_id, event_type, title, detail, actor, created_at) VALUES (?, 'approval', 'External action approved', 'The next reviewed distribution batch may be released after its destination account is connected. This does not authorize spend or payment configuration.', ?, ?)"
       )
-      .bind(missionId, now),
-  ]);
+      .bind(missionId, decidedBy, now),
+  ];
+  if (preparedAction) {
+    statements.push(
+      db
+        .prepare("UPDATE action_queue SET status = 'approved', decided_by = ?, decided_at = ?, updated_at = ? WHERE id = ? AND workspace_id = ? AND status = 'prepared'")
+        .bind(decidedBy, now, now, preparedAction.id, workspaceId),
+    );
+  }
+  await db.batch(statements);
 
   return getMission(missionId, workspaceId);
 }
@@ -254,7 +499,10 @@ export async function getMissionSummary(
     experimentCountResult,
     paymentCountResult,
     pendingApprovalResult,
+    approvedActionResult,
+    executedActionResult,
     openExperimentResult,
+    measurementSignalResult,
   ] = await Promise.all([
     db
       .prepare(
@@ -276,7 +524,7 @@ export async function getMissionSummary(
       .first<{ count: number }>(),
     db
       .prepare(
-        "SELECT COUNT(*) AS count FROM payments WHERE workspace_id = ? AND mission_id = ?",
+        "SELECT COUNT(*) AS count FROM payments WHERE workspace_id = ? AND mission_id = ? AND status = 'succeeded'",
       )
       .bind(workspaceId, missionId)
       .first<{ count: number }>(),
@@ -288,9 +536,27 @@ export async function getMissionSummary(
       .first<{ count: number }>(),
     db
       .prepare(
+        "SELECT COUNT(*) AS count FROM action_queue WHERE workspace_id = ? AND mission_id = ? AND status = 'approved'",
+      )
+      .bind(workspaceId, missionId)
+      .first<{ count: number }>(),
+    db
+      .prepare(
+        "SELECT COUNT(*) AS count FROM action_queue WHERE workspace_id = ? AND mission_id = ? AND status = 'executed'",
+      )
+      .bind(workspaceId, missionId)
+      .first<{ count: number }>(),
+    db
+      .prepare(
         "SELECT COUNT(*) AS count FROM experiments WHERE workspace_id = ? AND mission_id = ? AND status IN ('draft', 'running')",
       )
       .bind(workspaceId, missionId)
+      .first<{ count: number }>(),
+    db
+      .prepare(
+        "SELECT (SELECT COUNT(*) FROM touchpoints WHERE workspace_id = ? AND mission_id = ?) + (SELECT COUNT(*) FROM payments WHERE workspace_id = ? AND mission_id = ?) + (SELECT COUNT(*) FROM evidence WHERE workspace_id = ? AND mission_id = ? AND source_type != 'website') AS count",
+      )
+      .bind(workspaceId, missionId, workspaceId, missionId, workspaceId, missionId)
       .first<{ count: number }>(),
   ]);
 
@@ -303,7 +569,10 @@ export async function getMissionSummary(
   };
   const readiness = getMissionReadiness(snapshot, {
     pendingApprovals: pendingApprovalResult?.count ?? 0,
+    approvedActions: approvedActionResult?.count ?? 0,
+    executedActions: executedActionResult?.count ?? 0,
     openExperiments: openExperimentResult?.count ?? 0,
+    measurementSignals: measurementSignalResult?.count ?? 0,
   });
 
   return {

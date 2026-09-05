@@ -15,19 +15,7 @@ type RouteContext = {
 const installSchema = z.object({
   scopes: z.array(z.string().trim().min(1).max(200)).max(50).optional(),
   capabilities: z.array(z.string().trim().min(1).max(200)).max(50).optional(),
-  status: z
-    .enum([
-      "setup_required",
-      "authorized",
-      "connected",
-      "healthy",
-      "degraded",
-      "disconnected",
-      "revoked",
-      "error",
-    ])
-    .optional(),
-});
+}).strict();
 
 /**
  * Connectors scoped to a single provider slug.
@@ -87,7 +75,7 @@ export async function POST(request: Request, context: RouteContext) {
     const installation = await upsertInstallation(workspace.id, {
       provider: connector.name,
       category: connector.category,
-      status: input.status,
+      status: "setup_required",
       scopes: input.scopes,
       capabilities: input.capabilities,
     });
