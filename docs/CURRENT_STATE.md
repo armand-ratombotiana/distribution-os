@@ -66,6 +66,8 @@ Three distinctions are non-negotiable:
 ### Workspace UI and tooling
 
 - Actions, evidence, experiments, content, revenue, contacts, run telemetry, and settings render from authenticated APIs.
+- Mission and strategy version history now loads its two canonical tenant-scoped API projections instead of rendering a hard-coded empty collection.
+- Landing and connector surfaces distinguish the provider roadmap from the only verified runtime boundaries: governed Resend sandbox execution and signed Stripe webhook intake.
 - Preview and simulation are labelled as such; “running” and revenue states are not fabricated.
 - Default build, lint, test, dev, and start commands use a cross-platform Node launcher.
 
@@ -81,7 +83,6 @@ These are product gaps, not hidden successes:
 - Action preparation deduplication is still checked in application code, but outbound execution now has a database-enforced unique idempotency key.
 - Mission graph creation uses compensation, not one D1 transaction spanning every artifact.
 - Stripe ingestion supports the selected event families, but full customer/touchpoint lineage, refund reconciliation to the original charge, and unit-economics reporting are incomplete.
-- The Versions workspace view does not yet load its canonical API.
 - Delivery webhooks prove mail-server delivery, opens and clicks, but replies and conversion attribution still require a correlation design beyond the narrow adapter.
 
 ## Next best implementation wave

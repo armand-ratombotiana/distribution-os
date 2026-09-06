@@ -75,6 +75,8 @@ Connector records are setup declarations only. Their status cannot be promoted t
 - `drizzle/` — forward-only schema migrations
 - `tests/` — TypeScript and module tests
 - `docs/` — API, security, architecture, and current-state documentation
+- `docs/GOD_MODE_ASSESSMENT_AND_EXECUTION_PLAN.md` — repository-grounded product assessment and ordered delivery plan
+- `docs/USER_STORIES.md` — generated 84-story engineering catalog in the required ticket contract
 - `scripts/` — cross-platform command runner plus hosted Linux installer
 
 ## Security boundary

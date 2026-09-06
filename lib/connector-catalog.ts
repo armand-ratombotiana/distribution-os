@@ -2,6 +2,8 @@ export type Connector = {
   name: string;
   category: string;
   description: string;
+  availability: "live_execution" | "verified_ingestion" | "roadmap";
+  capabilities: string[];
   featured?: boolean;
 };
 
@@ -30,7 +32,24 @@ const descriptions: Record<string, string> = {
 const featured = new Set(["YouTube", "TikTok", "Instagram", "X", "Gmail", "Reddit", "Quora", "Stripe", "Metricool", "Google Analytics", "HubSpot", "LinkedIn"]);
 
 export const connectorCatalog: Connector[] = Object.entries(groups).flatMap(([category, names]) =>
-  names.map(name => ({ name, category, description: descriptions[category], featured: featured.has(name) }))
+  names.map(name => ({
+    name,
+    category,
+    description: descriptions[category],
+    availability:
+      name === "Resend"
+        ? "live_execution"
+        : name === "Stripe"
+          ? "verified_ingestion"
+          : "roadmap",
+    capabilities:
+      name === "Resend"
+        ? ["send_email"]
+        : name === "Stripe"
+          ? ["signed_payment_webhooks"]
+          : [],
+    featured: featured.has(name),
+  }))
 );
 
 export const connectorCategories = ["All", ...Object.keys(groups)];

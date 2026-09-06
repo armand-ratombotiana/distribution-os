@@ -13,6 +13,7 @@ import {
   summarizeForDisplay,
   type ConnectorInstallationRow,
 } from "../db/connectors-pure.ts";
+import { connectorCatalog } from "../lib/connector-catalog.ts";
 
 const baseRow: ConnectorInstallationRow = {
   id: "ws_1:stripe",
@@ -190,4 +191,14 @@ test("buildConnectorId is deterministic and slugifies the provider", () => {
   assert.equal(a, "ws_1:stripe");
   assert.equal(spaced, "ws_1:google-analytics");
   assert.notEqual(a, other);
+});
+
+test("catalog distinguishes verified runtime boundaries from roadmap entries", () => {
+  const live = connectorCatalog.filter((item) => item.availability === "live_execution");
+  const intake = connectorCatalog.filter((item) => item.availability === "verified_ingestion");
+  assert.deepEqual(live.map((item) => item.name), ["Resend"]);
+  assert.deepEqual(live[0]?.capabilities, ["send_email"]);
+  assert.deepEqual(intake.map((item) => item.name), ["Stripe"]);
+  assert.deepEqual(intake[0]?.capabilities, ["signed_payment_webhooks"]);
+  assert.equal(connectorCatalog.find((item) => item.name === "Gmail")?.availability, "roadmap");
 });

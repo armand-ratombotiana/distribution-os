@@ -13,54 +13,62 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
-type MissionVersionRow = {
+type MissionVersionSummary = {
   id: string;
-  workspace_id: string;
   mission_id: string;
   version_number: number;
-  mission_json: string;
   change_reason: string;
   created_by: string;
   created_at: number;
+  mission_field_count: number;
+  is_initial: boolean;
 };
 
-type StrategyVersionRow = {
+type StrategyVersionSummary = {
   id: string;
-  workspace_id: string;
   mission_id: string;
   version_number: number;
-  strategy_json: string;
   hypothesis: string;
   confidence: number;
   change_reason: string;
   created_by: string;
   created_at: number;
+  strategy_field_count: number;
+  confidence_band: "low" | "medium" | "high";
+  is_initial: boolean;
 };
 
 type VersionEntry =
-  | { kind: "mission"; row: MissionVersionRow }
-  | { kind: "strategy"; row: StrategyVersionRow };
+  | { kind: "mission"; row: MissionVersionSummary }
+  | { kind: "strategy"; row: StrategyVersionSummary };
 
 type VersionsResponse = {
-  mission_versions?: MissionVersionRow[];
-  strategy_versions?: StrategyVersionRow[];
+  kind?: "mission" | "strategy";
+  versions?: MissionVersionSummary[] | StrategyVersionSummary[];
   error?: string;
 };
 
-function summarizeMission(json: string): { fields: number; preview: string } {
-  try {
-    const parsed = JSON.parse(json) as Record<string, unknown>;
-    const keys = Object.keys(parsed);
-    const preview =
-      typeof parsed.product_name === "string"
-        ? parsed.product_name
-        : typeof parsed.executive_thesis === "string"
-          ? parsed.executive_thesis.slice(0, 80)
-          : "Mission snapshot";
-    return { fields: keys.length, preview };
-  } catch {
-    return { fields: 0, preview: "Unreadable snapshot" };
+async function loadVersions(missionId: string): Promise<VersionEntry[]> {
+  const [missionResponse, strategyResponse] = await Promise.all([
+    fetch(`/api/missions/${missionId}/versions?kind=mission`),
+    fetch(`/api/missions/${missionId}/versions?kind=strategy`),
+  ]);
+  const [missionData, strategyData] = (await Promise.all([
+    missionResponse.json(),
+    strategyResponse.json(),
+  ])) as [VersionsResponse, VersionsResponse];
+  if (!missionResponse.ok) {
+    throw new Error(missionData.error || "Failed to load mission versions");
   }
+  if (!strategyResponse.ok) {
+    throw new Error(strategyData.error || "Failed to load strategy versions");
+  }
+  const mission = (missionData.versions || []) as MissionVersionSummary[];
+  const strategy = (strategyData.versions || []) as StrategyVersionSummary[];
+  return [
+    ...mission.map((row) => ({ kind: "mission" as const, row })),
+    ...strategy.map((row) => ({ kind: "strategy" as const, row })),
+  ].sort((a, b) => b.row.created_at - a.row.created_at);
 }
 
 export function VersionsPanel({ missionId }: { missionId: string }) {
@@ -75,25 +83,11 @@ export function VersionsPanel({ missionId }: { missionId: string }) {
       setLoading(true);
       setError("");
       try {
-        const response = await fetch(`/api/missions/${missionId}/versions`);
-        const data = (await response.json()) as VersionsResponse;
+        const data = await loadVersions(missionId);
         if (cancelled) return;
-        if (response.ok) {
-          const mission: VersionEntry[] = (data.mission_versions || []).map(
-            (row) => ({ kind: "mission" as const, row }),
-          );
-          const strategy: VersionEntry[] = (data.strategy_versions || []).map(
-            (row) => ({ kind: "strategy" as const, row }),
-          );
-          const merged = [...mission, ...strategy].sort(
-            (a, b) => b.row.created_at - a.row.created_at,
-          );
-          setVersions(merged);
-        } else {
-          setError(data.error || "Failed to load version history");
-        }
-      } catch {
-        if (!cancelled) setError("Network error while loading version history");
+        setVersions(data);
+      } catch (caught) {
+        if (!cancelled) setError(caught instanceof Error ? caught.message : "Network error while loading version history");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -106,20 +100,7 @@ export function VersionsPanel({ missionId }: { missionId: string }) {
 
   async function reload(): Promise<void> {
     try {
-      const response = await fetch(`/api/missions/${missionId}/versions`);
-      const data = (await response.json()) as VersionsResponse;
-      if (response.ok) {
-        const mission: VersionEntry[] = (data.mission_versions || []).map(
-          (row) => ({ kind: "mission" as const, row }),
-        );
-        const strategy: VersionEntry[] = (data.strategy_versions || []).map(
-          (row) => ({ kind: "strategy" as const, row }),
-        );
-        const merged = [...mission, ...strategy].sort(
-          (a, b) => b.row.created_at - a.row.created_at,
-        );
-        setVersions(merged);
-      }
+      setVersions(await loadVersions(missionId));
     } catch {
       // background reloads are non-fatal
     }
@@ -185,10 +166,9 @@ export function VersionsPanel({ missionId }: { missionId: string }) {
       ) : (
         <ol className="version-timeline">
           {filtered.map((entry) => {
-            const summary =
-              entry.kind === "mission"
-                ? summarizeMission(entry.row.mission_json)
-                : { fields: 0, preview: entry.row.hypothesis };
+            const summary = entry.kind === "mission"
+              ? `${entry.row.mission_field_count} mission fields${entry.row.is_initial ? " · initial snapshot" : ""}`
+              : `${entry.row.strategy_field_count} strategy fields · ${entry.row.hypothesis}`;
             return (
               <li
                 key={`${entry.kind}-${entry.row.id}`}
@@ -209,7 +189,7 @@ export function VersionsPanel({ missionId }: { missionId: string }) {
                     </em>
                   </header>
                   <p>{entry.row.change_reason}</p>
-                  <small>{summary.preview}</small>
+                  <small>{summary}</small>
                   <footer className="ws-card-foot">
                     <small>
                       {entry.row.created_by} ·{" "}
