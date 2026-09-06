@@ -50,7 +50,7 @@ Three distinctions are non-negotiable:
 - Approved `send_email` actions can execute through the real Resend HTTPS API only when the requested connector, server credential, exact tenant, exact sender, and recipient sandbox allowlist all match.
 - The Resend boundary re-checks the immutable payload hash, quiet hours, configured claims, budgets, and rolling 24-hour action limit before any network call.
 - Execution attempts are persisted before submission with a database-unique idempotency key; the same key is sent to Resend. Confirmed, definitive-failure, and ambiguous outcomes remain distinct.
-- Signed Resend webhooks are verified from their raw bodies, deduplicated by `svix-id`, and linked back to the provider request, action, mission, touchpoint, and evidence ledger. Only `email.delivered` becomes verified delivery evidence.
+- Signed Resend webhooks are verified from their raw bodies and deduplicated by `svix-id`. Events matching a persisted succeeded attempt are linked to the provider request, action, mission, touchpoint, and evidence ledger. Signed events arriving before that attempt are safely persisted as unmatched (`action_id` null) and reconciled when the successful attempt is persisted or the provider redelivers. Only `email.delivered` becomes verified delivery evidence.
 - Every other outbound action type remains fail-closed with `501`.
 - Data-deletion audit events are created only after the deletion batch succeeds.
 

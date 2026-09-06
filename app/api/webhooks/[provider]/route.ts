@@ -176,32 +176,56 @@ async function handleResendWebhook(request: Request): Promise<Response> {
   }
 
   const db = getRawDb();
+  const now = Date.now();
+  const parsedOccurredAt = Date.parse(event.created_at);
+  const occurredAt = Number.isFinite(parsedOccurredAt) ? parsedOccurredAt : now;
+  const payloadHash = await hashPayload(event);
+  const eventJson = JSON.stringify(event);
+  const state = resendEventState(event.type);
+  const title = `Resend ${event.type.replace("email.", "")}`;
+  const eventRowId = `pwe_${crypto.randomUUID()}`;
+
   const existing = await db
-    .prepare("SELECT id FROM provider_webhook_events WHERE provider = 'resend' AND provider_event_id = ? LIMIT 1")
+    .prepare("SELECT id, workspace_id, action_id FROM provider_webhook_events WHERE provider = 'resend' AND provider_event_id = ? LIMIT 1")
     .bind(eventId)
-    .first<{ id: string }>();
-  if (existing) return Response.json({ received: true, duplicate: true });
+    .first<{ id: string; workspace_id: string; action_id: string | null }>();
+  if (existing && existing.workspace_id !== enabledWorkspaceId) {
+    return Response.json(
+      { error: "Resend event is already bound to another workspace." },
+      { status: 409 },
+    );
+  }
+  if (existing?.action_id) {
+    return Response.json({ received: true, duplicate: true, matched: true });
+  }
 
   const attempt = await db
     .prepare("SELECT workspace_id, mission_id, action_id FROM action_execution_attempts WHERE provider = 'resend' AND provider_request_id = ? AND workspace_id = ? AND status = 'succeeded' LIMIT 1")
     .bind(event.data.email_id, enabledWorkspaceId)
     .first<{ workspace_id: string; mission_id: string; action_id: string }>();
   if (!attempt) {
-    return Response.json({ received: true, matched: false }, { status: 202 });
+    // A signed provider event can arrive before the request thread has persisted
+    // its successful execution attempt. Persist the normalized event before the
+    // acknowledgement so a later redelivery or reconciliation pass can attach it.
+    // The configured workspace is the only tenant this single-account sandbox
+    // adapter is allowed to receive for.
+    await db
+      .prepare("INSERT OR IGNORE INTO provider_webhook_events (id, workspace_id, action_id, provider, provider_event_id, provider_request_id, event_type, payload_hash, occurred_at, received_at, created_at) VALUES (?, ?, NULL, 'resend', ?, ?, ?, ?, ?, ?, ?)")
+      .bind(eventRowId, enabledWorkspaceId, eventId, event.data.email_id, event.type, payloadHash, occurredAt, now, now)
+      .run();
+    return Response.json(
+      { received: true, matched: false, persisted: true },
+      { status: 202 },
+    );
   }
 
-  const now = Date.now();
-  const occurredAt = Date.parse(event.created_at);
-  const payloadHash = await hashPayload(event);
-  const eventJson = JSON.stringify(event);
-  const state = resendEventState(event.type);
-  const title = `Resend ${event.type.replace("email.", "")}`;
-  const eventRowId = `pwe_${crypto.randomUUID()}`;
+  const missionDetail = `Signed provider event ${event.type}; provider request ${event.data.email_id}.`;
   await db.batch([
-    db.prepare("INSERT OR IGNORE INTO touchpoints (id, workspace_id, mission_id, action_id, experiment_id, channel, event_type, occurred_at, received_at, provider_event_id, raw_event_json, created_at) SELECT ?, ?, ?, ?, NULL, 'email', ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM provider_webhook_events WHERE provider = 'resend' AND provider_event_id = ?)").bind(`tp_${eventId}`, attempt.workspace_id, attempt.mission_id, attempt.action_id, event.type, occurredAt, now, eventId, eventJson, now, eventId),
-    db.prepare("INSERT OR IGNORE INTO evidence (id, workspace_id, mission_id, source_url, source_type, content_hash, parser_version, title, summary, extracted_facts_json, provenance_json, state, contradiction_of_id, created_at, updated_at) SELECT ?, ?, ?, NULL, 'provider_webhook', ?, '1.0', ?, ?, ?, ?, ?, NULL, ?, ? WHERE NOT EXISTS (SELECT 1 FROM provider_webhook_events WHERE provider = 'resend' AND provider_event_id = ?)").bind(`ev_${eventId}`, attempt.workspace_id, attempt.mission_id, payloadHash, title, `Signed Resend event ${event.type} for the submitted email.`, JSON.stringify({ provider_request_id: event.data.email_id, event_type: event.type, occurred_at: event.created_at }), JSON.stringify({ provider: "resend", svix_id: eventId, action_id: attempt.action_id }), state, now, now, eventId),
-    db.prepare("INSERT INTO mission_events (mission_id, event_type, title, detail, actor, created_at) SELECT ?, 'measurement', ?, ?, 'Resend webhook', ? WHERE NOT EXISTS (SELECT 1 FROM provider_webhook_events WHERE provider = 'resend' AND provider_event_id = ?)").bind(attempt.mission_id, title, `Signed provider event ${event.type}; provider request ${event.data.email_id}.`, now, eventId),
-    db.prepare("INSERT INTO provider_webhook_events (id, workspace_id, action_id, provider, provider_event_id, provider_request_id, event_type, payload_hash, occurred_at, received_at, created_at) VALUES (?, ?, ?, 'resend', ?, ?, ?, ?, ?, ?, ?)").bind(eventRowId, attempt.workspace_id, attempt.action_id, eventId, event.data.email_id, event.type, payloadHash, occurredAt, now, now),
+    db.prepare("INSERT OR IGNORE INTO provider_webhook_events (id, workspace_id, action_id, provider, provider_event_id, provider_request_id, event_type, payload_hash, occurred_at, received_at, created_at) VALUES (?, ?, ?, 'resend', ?, ?, ?, ?, ?, ?, ?)").bind(eventRowId, attempt.workspace_id, attempt.action_id, eventId, event.data.email_id, event.type, payloadHash, occurredAt, now, now),
+    db.prepare("UPDATE provider_webhook_events SET action_id = ? WHERE workspace_id = ? AND provider = 'resend' AND provider_event_id = ? AND action_id IS NULL").bind(attempt.action_id, attempt.workspace_id, eventId),
+    db.prepare("INSERT OR IGNORE INTO touchpoints (id, workspace_id, mission_id, action_id, experiment_id, channel, event_type, occurred_at, received_at, provider_event_id, raw_event_json, created_at) VALUES (?, ?, ?, ?, NULL, 'email', ?, ?, ?, ?, ?, ?)").bind(`tp_${eventId}`, attempt.workspace_id, attempt.mission_id, attempt.action_id, event.type, occurredAt, now, eventId, eventJson, now),
+    db.prepare("INSERT OR IGNORE INTO evidence (id, workspace_id, mission_id, source_url, source_type, content_hash, parser_version, title, summary, extracted_facts_json, provenance_json, state, contradiction_of_id, created_at, updated_at) VALUES (?, ?, ?, NULL, 'provider_webhook', ?, '1.0', ?, ?, ?, ?, ?, NULL, ?, ?)").bind(`ev_${eventId}`, attempt.workspace_id, attempt.mission_id, payloadHash, title, `Signed Resend event ${event.type} for the submitted email.`, JSON.stringify({ provider_request_id: event.data.email_id, event_type: event.type, occurred_at: event.created_at }), JSON.stringify({ provider: "resend", svix_id: eventId, action_id: attempt.action_id }), state, now, now),
+    db.prepare("INSERT INTO mission_events (mission_id, event_type, title, detail, actor, created_at) SELECT ?, 'measurement', ?, ?, 'Resend webhook', ? WHERE NOT EXISTS (SELECT 1 FROM mission_events WHERE mission_id = ? AND event_type = 'measurement' AND detail = ?)").bind(attempt.mission_id, title, missionDetail, now, attempt.mission_id, missionDetail),
   ]);
 
   if (["email.bounced", "email.failed", "email.complained", "email.suppressed"].includes(event.type)) {

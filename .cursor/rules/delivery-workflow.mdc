@@ -1,0 +1,15 @@
+---
+description: Distribution OS delegation and remote delivery workflow
+alwaysApply: true
+---
+
+# Delivery Workflow
+
+- For substantial implementation, architecture, review, or planning work, use 20 bounded subagent assignments across sequential waves.
+- Respect the platform concurrency limit: run no more than three subagents alongside the primary agent.
+- Give each subagent one independent, concrete task with a clear deliverable; avoid overlapping edits.
+- The primary agent owns integration, resolves conflicting recommendations, and verifies the final result.
+- Do not use subagents as ceremony for a trivial one-step request; preserve the 20-agent workflow for work that can be meaningfully decomposed.
+- After implementation and proportional verification, commit the completed in-scope changes and push the current branch to its configured remote.
+- Never push secrets, generated credentials, local runtime state, or unrelated user changes.
+- If push is blocked by authentication, branch protection, conflicts, or failed verification, report the blocker truthfully instead of claiming delivery.

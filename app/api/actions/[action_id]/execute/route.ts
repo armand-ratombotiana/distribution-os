@@ -114,7 +114,56 @@ async function persistConfirmedExecution(action: ActionRow, providerRequestId: s
     db.prepare("INSERT OR IGNORE INTO evidence (id, workspace_id, mission_id, source_url, source_type, content_hash, parser_version, title, summary, extracted_facts_json, provenance_json, state, contradiction_of_id, created_at, updated_at) VALUES (?, ?, ?, NULL, 'provider_receipt', ?, '1.0', 'Resend accepted email', 'The provider accepted the exact approved email payload; delivery is not yet proven.', ?, ?, 'observed', NULL, ?, ?)").bind(`ev_provider_${action.id}`, action.workspace_id, action.mission_id, action.payload_hash, JSON.stringify({ provider_request_id: providerRequestId, event: "provider_accepted" }), JSON.stringify({ provider: "resend", action_id: action.id }), now, now),
     db.prepare("INSERT INTO mission_events (mission_id, event_type, title, detail, actor, created_at) SELECT ?, 'execution', 'Approved email submitted', ?, 'Resend adapter', ? WHERE NOT EXISTS (SELECT 1 FROM mission_events WHERE mission_id = ? AND event_type = 'execution' AND detail = ?)").bind(action.mission_id, `Resend accepted action ${action.id}. Delivery remains unverified.`, now, action.mission_id, `Resend accepted action ${action.id}. Delivery remains unverified.`),
   ]);
+  await reconcilePendingResendEvents(action, providerRequestId);
   return (await getAction(action.workspace_id, action.id))!;
+}
+
+type PendingResendEventRow = {
+  provider_event_id: string;
+  event_type: string;
+  payload_hash: string;
+  occurred_at: number;
+  received_at: number;
+};
+
+async function reconcilePendingResendEvents(
+  action: ActionRow,
+  providerRequestId: string,
+): Promise<void> {
+  const db = getRawDb();
+  const result = await db
+    .prepare("SELECT provider_event_id, event_type, payload_hash, occurred_at, received_at FROM provider_webhook_events WHERE workspace_id = ? AND provider = 'resend' AND provider_request_id = ? AND action_id IS NULL ORDER BY received_at ASC")
+    .bind(action.workspace_id, providerRequestId)
+    .all<PendingResendEventRow>();
+
+  for (const event of result.results) {
+    const now = Date.now();
+    const title = `Resend ${event.event_type.replace("email.", "")}`;
+    const detail = `Signed provider event ${event.event_type}; provider request ${providerRequestId}.`;
+    const eventJson = JSON.stringify({
+      provider: "resend",
+      provider_event_id: event.provider_event_id,
+      provider_request_id: providerRequestId,
+      event_type: event.event_type,
+      occurred_at: event.occurred_at,
+      reconciled: true,
+    });
+    const evidenceState = event.event_type === "email.delivered" ? "verified" : "observed";
+
+    await db.batch([
+      db.prepare("UPDATE provider_webhook_events SET action_id = ? WHERE workspace_id = ? AND provider = 'resend' AND provider_event_id = ? AND action_id IS NULL").bind(action.id, action.workspace_id, event.provider_event_id),
+      db.prepare("INSERT OR IGNORE INTO touchpoints (id, workspace_id, mission_id, action_id, experiment_id, channel, event_type, occurred_at, received_at, provider_event_id, raw_event_json, created_at) VALUES (?, ?, ?, ?, NULL, 'email', ?, ?, ?, ?, ?, ?)").bind(`tp_${event.provider_event_id}`, action.workspace_id, action.mission_id, action.id, event.event_type, event.occurred_at, event.received_at, event.provider_event_id, eventJson, now),
+      db.prepare("INSERT OR IGNORE INTO evidence (id, workspace_id, mission_id, source_url, source_type, content_hash, parser_version, title, summary, extracted_facts_json, provenance_json, state, contradiction_of_id, created_at, updated_at) VALUES (?, ?, ?, NULL, 'provider_webhook', ?, '1.0', ?, ?, ?, ?, ?, NULL, ?, ?)").bind(`ev_${event.provider_event_id}`, action.workspace_id, action.mission_id, event.payload_hash, title, `Signed Resend event ${event.event_type} for the submitted email.`, JSON.stringify({ provider_request_id: providerRequestId, event_type: event.event_type, occurred_at: event.occurred_at }), JSON.stringify({ provider: "resend", svix_id: event.provider_event_id, action_id: action.id, reconciled: true }), evidenceState, now, now),
+      db.prepare("INSERT INTO mission_events (mission_id, event_type, title, detail, actor, created_at) SELECT ?, 'measurement', ?, ?, 'Resend webhook reconciliation', ? WHERE NOT EXISTS (SELECT 1 FROM mission_events WHERE mission_id = ? AND event_type = 'measurement' AND detail = ?)").bind(action.mission_id, title, detail, now, action.mission_id, detail),
+    ]);
+
+    if (["email.bounced", "email.failed", "email.complained", "email.suppressed"].includes(event.event_type)) {
+      await db
+        .prepare("UPDATE connector_installations SET status = CASE WHEN status IN ('healthy','connected') THEN 'degraded' ELSE status END, last_error = ?, health_checked_at = ?, updated_at = ? WHERE workspace_id = ? AND provider = 'Resend'")
+        .bind(`Signed provider event: ${event.event_type}`, now, now, action.workspace_id)
+        .run();
+    }
+  }
 }
 
 async function persistFailedExecution(action: ActionRow, definitive: boolean, code: string, message: string, receipt: Record<string, unknown>) {
